@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Laboratório de Code Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: coluna única de leitura (~62rem) com barra de progresso fixa no topo; passos como "linhas de revisão" com marcador de ambiente */
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #141a22;
+  --surface-2: #1a222c;
+  --line: #27313d;
+  --fg: #dfe6ee;
+  --muted: #8e9bab;
+  --accent: #7fa7f5;
+  --accent-ink: #0d1117;
+  --add: #4cc76a;
+  --add-bg: rgba(76, 199, 106, .12);
+  --del: #f2756d;
+  --del-bg: rgba(242, 117, 109, .12);
+  --note: #e0b453;
+  --note-bg: rgba(224, 180, 83, .12);
+  --code-bg: #0a0e13;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+  --step-1: .8125rem;
+  --step0: 1rem;
+  --step1: 1.2rem;
+  --step2: 1.55rem;
+  --step3: clamp(1.9rem, 4.5vw, 2.6rem);
+  --radius: 8px;
+}
+/* Paleta clara usada apenas na geração do PDF para impressão */
+:root[data-pdf] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --surface-2: #eef1f4;
+  --line: #cfd6de;
+  --fg: #16202b;
+  --muted: #4f5d6c;
+  --accent: #2456b8;
+  --accent-ink: #ffffff;
+  --add: #1c7a35;
+  --add-bg: #e6f4ea;
+  --del: #b4342c;
+  --del-bg: #fbe9e7;
+  --note: #8a5d00;
+  --note-bg: #fbf1dc;
+  --code-bg: #f3f5f8;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--step0);
+  line-height: 1.6;
+}
+.wrap {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 0 4rem;
+}
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: var(--step3); font-weight: 800; letter-spacing: -.01em; }
+h2 { font-size: var(--step2); font-weight: 800; }
+h3 { font-size: var(--step1); font-weight: 600; }
+p { margin: 0; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+code, pre, kbd { font-family: var(--font-mono); font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+.codigo.quebra pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+:not(pre) > code {
+  font-size: .88em; background: var(--surface-2); border: 1px solid var(--line);
+  padding: .05em .35em; border-radius: 4px; overflow-wrap: anywhere;
+}
+.eyebrow {
+  font-family: var(--font-mono); font-size: var(--step-1); text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted);
+}
+section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; padding-block: 2.25rem 0; }
+.grupo, .resposta, .arquivos, .passo .corpo, #respostas > .grupo { grid-template-columns: minmax(0, 1fr); }
+.lead { max-width: 68ch; }
+.muted { color: var(--muted); }
+
+/* ---------- cabeçalho ---------- */
+.topo { display: grid; gap: 1.1rem; padding-block: 2.5rem 0; }
+.branch-line {
+  display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+  font-family: var(--font-mono); font-size: var(--step-1); color: var(--muted);
+}
+.branch-line .pill { border: 1px solid var(--line); border-radius: 999px; padding: .1rem .6rem; }
+.branch-line .pill.base { color: var(--fg); }
+.branch-line .pill.head { color: var(--accent); border-color: var(--accent); }
+.intro { display: grid; gap: .75rem; max-width: 70ch; }
+.selo {
+  display: grid; gap: .25rem; border-left: 3px solid var(--accent); padding: .6rem .9rem;
+  background: var(--surface); border-radius: 0 var(--radius) var(--radius) 0;
+}
+.selo .meta { font-family: var(--font-mono); font-size: var(--step-1); color: var(--muted); }
+
+.campo { display: grid; gap: .4rem; }
+.campo label { font-weight: 600; }
+.campo input, .campo textarea {
+  width: 100%; font: inherit; color: var(--fg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: .7rem .8rem;
+}
+.campo textarea { min-height: 8rem; resize: vertical; }
+.campo .ajuda { font-size: var(--step-1); color: var(--muted); }
+
+/* ---------- barra de progresso ---------- */
+.progresso {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+  margin-inline: -16px; padding: .7rem 16px;
+}
+.progresso-linha { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+.progresso-linha strong { font-family: var(--font-display); font-size: var(--step1); font-variant-numeric: tabular-nums; }
+.trilho { height: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-top: .45rem; position: relative; }
+.trilho .marca { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: var(--note); }
+.barra { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--add)); transition: width .3s ease; }
+@media (prefers-reduced-motion: reduce) { .barra { transition: none; } }
+
+/* ---------- contexto ---------- */
+.contexto { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
+.contexto div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem .9rem; display: grid; gap: .2rem; min-width: 0; }
+.contexto dt { font-family: var(--font-mono); font-size: var(--step-1); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.contexto dd { margin: 0; }
+.papeis { display: grid; gap: .4rem; padding-left: 1.2rem; margin: 0; }
+
+/* ---------- checklist ---------- */
+.lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.lista > li { border-top: 1px solid var(--line); background: var(--surface); }
+.lista > li:first-child { border-top: 0; }
+.check { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: .75rem; padding: .75rem .9rem; cursor: pointer; align-items: start; }
+.check input { width: 1.15rem; height: 1.15rem; margin: .2rem 0 0; accent-color: var(--add); cursor: pointer; }
+.check .txt { min-width: 0; }
+.check .txt small { display: block; color: var(--muted); font-size: var(--step-1); }
+.check:has(input:checked) .titulo { text-decoration: line-through; text-decoration-color: var(--add); color: var(--muted); }
+
+.grupo { display: grid; gap: .75rem; }
+.grupo-cab { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+.grupo-cab .etapa { font-family: var(--font-mono); font-size: var(--step-1); color: var(--accent); }
+
+.passo { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: .75rem; padding: 1rem .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.passo > input { width: 1.15rem; height: 1.15rem; margin: .25rem 0 0; accent-color: var(--add); cursor: pointer; }
+.passo .corpo { display: grid; gap: .7rem; min-width: 0; }
+.passo .titulo-passo { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+.passo .num { font-family: var(--font-mono); font-size: var(--step-1); color: var(--muted); font-variant-numeric: tabular-nums; }
+.passo label.titulo { font-weight: 600; cursor: pointer; }
+.passo.feito { border-color: color-mix(in srgb, var(--add) 45%, var(--line)); }
+.passo.feito label.titulo { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--add); }
+.amb { display: inline-flex; gap: .3rem; flex-wrap: wrap; }
+.chip { font-family: var(--font-mono); font-size: .72rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.ps { color: #8fb8ff; border-color: #2c4a7a; }
+.chip.git { color: #f08a6c; border-color: #6a3526; }
+.chip.vs { color: #6cc4f0; border-color: #20506a; }
+.chip.web { color: #c9a5f2; border-color: #4d3a6a; }
+:root[data-pdf] .chip.ps { color: #1d4f9c; border-color: #9db8e0; }
+:root[data-pdf] .chip.git { color: #9a3a1e; border-color: #e0b0a0; }
+:root[data-pdf] .chip.vs { color: #0f5f86; border-color: #9fcbe0; }
+:root[data-pdf] .chip.web { color: #5d3a8a; border-color: #c6b2e0; }
+.passo ul, .passo ol { margin: 0; padding-left: 1.2rem; display: grid; gap: .25rem; }
+.esperado { border-left: 3px solid var(--add); background: var(--add-bg); padding: .5rem .75rem; border-radius: 0 6px 6px 0; font-size: .95rem; }
+.alerta { border-left: 3px solid var(--note); background: var(--note-bg); padding: .5rem .75rem; border-radius: 0 6px 6px 0; font-size: .95rem; }
+
+/* ---------- blocos de código ---------- */
+.codigo { position: relative; border: 1px solid var(--line); border-radius: 6px; background: var(--code-bg); min-width: 0; }
+.codigo .cab { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .3rem .4rem .3rem .75rem; border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: .75rem; color: var(--muted); }
+.codigo pre { margin: 0; padding: .75rem; overflow-x: auto; font-size: .82rem; line-height: 1.55; tab-size: 2; }
+.copiar { font: 600 .72rem var(--font-mono); color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: .2rem .55rem; cursor: pointer; }
+.copiar:hover { border-color: var(--accent); }
+.copiar.ok { color: var(--add); border-color: var(--add); }
+details.arquivo { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+details.arquivo > summary { cursor: pointer; padding: .65rem .9rem; font-family: var(--font-mono); font-size: .88rem; display: flex; gap: .6rem; flex-wrap: wrap; align-items: baseline; }
+details.arquivo > summary .muted { font-family: var(--font-body); font-size: var(--step-1); }
+details.arquivo > .codigo { margin: 0 .6rem .6rem; }
+.arquivos { display: grid; gap: .5rem; }
+.diff-legenda { display: flex; gap: .5rem; flex-wrap: wrap; font-family: var(--font-mono); font-size: .75rem; }
+.diff-legenda span { padding: .1rem .45rem; border-radius: 4px; }
+.lgtm { color: var(--add); background: var(--add-bg); }
+.cr { color: var(--del); background: var(--del-bg); }
+.sug { color: var(--note); background: var(--note-bg); }
+
+/* ---------- respostas ---------- */
+.bloqueio { border: 1px dashed var(--line); border-radius: var(--radius); padding: 1.25rem; display: grid; gap: .4rem; background: var(--surface); }
+.bloqueio strong { font-family: var(--font-display); font-size: var(--step1); }
+.resposta { display: grid; gap: .6rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.1rem; }
+.resposta h3 { display: flex; gap: .6rem; flex-wrap: wrap; align-items: baseline; }
+.resposta h3 .etapa { font-family: var(--font-mono); font-size: var(--step-1); color: var(--accent); font-weight: 400; }
+.qa { display: grid; gap: .2rem; }
+.qa .q { font-weight: 600; }
+.qa .a { color: var(--fg); }
+.qa ul { margin: 0; padding-left: 1.2rem; display: grid; gap: .2rem; }
+.tabela { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 400; }
+td.pts { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.rubrica { border-top: 1px solid var(--line); padding-top: .6rem; display: grid; gap: .3rem; }
+.rubrica .eyebrow { color: var(--note); }
+
+.fontes { margin: 0; padding-left: 1.2rem; display: grid; gap: .45rem; }
+.acoes { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.botao { font: 600 .9rem var(--font-body); color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 6px; padding: .55rem 1rem; cursor: pointer; }
+.rodape { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: var(--step-1); color: var(--muted); }
+.so-pdf { display: none; }
+
+/* ---------- modo PDF (estado final, estático) ---------- */
+:root[data-pdf] .progresso { position: static; backdrop-filter: none; background: var(--bg); }
+:root[data-pdf] .copiar, :root[data-pdf] .bloqueio, :root[data-pdf] .so-web { display: none !important; }
+:root[data-pdf] .so-pdf { display: block; }
+:root[data-pdf] .linha-branco { border-bottom: 1px solid var(--fg); height: 2rem; }
+:root[data-pdf] .caixa-branco { border: 1px solid var(--fg); border-radius: 6px; height: 9rem; }
+:root[data-pdf] .codigo pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; font-size: .72rem; }
+:root[data-pdf] .passo, :root[data-pdf] .resposta, :root[data-pdf] .contexto div { break-inside: avoid; }
+:root[data-pdf] details.arquivo { break-inside: auto; }
+:root[data-pdf] h2 { break-after: avoid; }
+
+@media (max-width: 30rem) {
+  .passo, .check { grid-template-columns: 1.2rem minmax(0, 1fr); gap: .6rem; padding-inline: .7rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- 1. Introdução -->
+  <header class="topo">
+    <div class="branch-line" aria-label="Contexto da aula">
+      <span class="pill base">Versionamento de Código</span>
+      <span>←</span>
+      <span class="pill head">4º bim · Semana 22 · Aula 2</span>
+    </div>
+    <h1>Boas práticas de Code Review</h1>
+    <div class="intro">
+      <p>Atividade elaborada pelo Prof. Marcos Souza, baseado nos materiais didáticos fornecidos pela Sec. Educ. do Estado de São Paulo para o programa de Educação Profissional Paulista, curso Técnico em Desenvolvimento de Sistemas, disciplina Versionamento de Código, 4º bimestre, Semana 22, Aula 2, tema “Boas práticas de <em>Code Review</em>”.</p>
+      <div class="selo">
+        <p>A ferramenta de inteligência artificial Claude, desenvolvida pela Anthropic, foi utilizada para otimizar esta atividade.</p>
+        <p class="meta">Modelo: Claude Opus 5.5 (claude-opus-5-5) · Gerada em 13/10/2026 às 01:46 (horário de Brasília)</p>
+      </div>
+    </div>
+
+    <!-- 2. Nomes do grupo -->
+    <div class="campo">
+      <label for="nomes">Integrantes do grupo</label>
+      <input id="nomes" type="text" class="so-web" placeholder="Ex.: Ana Lima, Bruno Reis, Carla Souza" autocomplete="off">
+      <div class="so-pdf"><div class="linha-branco"></div><div class="linha-branco"></div></div>
+      <span class="ajuda so-web">Escreva o nome de todos, separados por vírgula. Fica guardado enquanto esta aba estiver aberta.</span>
+    </div>
+  </header>
+
+  <!-- Barra de progresso -->
+  <div class="progresso" role="region" aria-label="Progresso da atividade">
+    <div class="progresso-linha">
+      <span class="eyebrow">Progresso</span>
+      <span><strong id="prog-num">0 / 0</strong> <span class="muted" id="prog-pct">0%</span></span>
+    </div>
+    <div class="trilho" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="trilho">
+      <div class="barra" id="barra"></div>
+      <span class="marca" title="50%: libera as respostas"></span>
+    </div>
+  </div>
+
+  <!-- Contexto -->
+  <section aria-labelledby="ctx-h">
+    <h2 id="ctx-h">Contexto do laboratório</h2>
+    <p class="lead">O grupo vai simular o ciclo completo de uma <em>Pull Request</em> (PR): uma pessoa abre a PR, outra revisa com critérios, o time decide entre LGTM e <em>change-request</em>, o autor corrige e a mudança é integrada. Tudo acontece em um repositório Git local que o script monta para vocês.</p>
+    <dl class="contexto">
+      <div><dt>Sistema</dt><dd>Windows 10/11, PowerShell 5.1 ou 7 como terminal padrão</dd></div>
+      <div><dt>Ferramentas</dt><dd>Git 2.40+, Node.js 20 LTS+ (npm 10+), VS Code 1.90+</dd></div>
+      <div><dt>Grupos</dt><dd>2 a 4 estudantes por grupo</dd></div>
+      <div><dt>Duração</dt><dd>2 aulas de 50 min (aula 1: passos 1 a 8 · aula 2: passos 9 a 14)</dd></div>
+    </dl>
+    <div class="grupo">
+      <h3>Papéis no grupo (troquem na próxima atividade)</h3>
+      <ul class="papeis">
+        <li><strong>Autor(a)</strong>: “abriu” a PR; preenche a descrição e faz as correções.</li>
+        <li><strong>Revisor(a)</strong>: lê o diff, roda as checagens e escreve os comentários.</li>
+        <li><strong>Guardião(ã) do checklist</strong>: confere se a revisão seguiu os critérios e a etiqueta. Em grupos de 4, a quarta pessoa é <strong>relator(a)</strong> e registra as respostas.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 3a. Recursos -->
+  <section aria-labelledby="rec-h">
+    <h2 id="rec-h">Recursos necessários</h2>
+    <p class="muted">Marque cada item quando estiver disponível no computador do grupo. Os recursos contam no progresso.</p>
+    <ul class="lista" id="recursos">
+      <li><label class="check"><input type="checkbox" class="item" id="r1"><span class="txt"><span class="titulo">Windows 10/11 com PowerShell</span><small>Abra com Win + X › Terminal (ou “Windows PowerShell”).</small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r2"><span class="txt"><span class="titulo">Git 2.40 ou superior</span><small>Instalação: <code>winget install --id Git.Git -e</code></small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r3"><span class="txt"><span class="titulo">Node.js 20 LTS ou superior (com npm 10+)</span><small>Instalação: <code>winget install --id OpenJS.NodeJS.LTS -e</code>. O executor de testes <code>node --test</code> vem embutido.</small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r4"><span class="txt"><span class="titulo">Visual Studio Code 1.90 ou superior, com o comando <code>code</code> no PATH</span><small>Instalação: <code>winget install --id Microsoft.VisualStudioCode -e</code></small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r5"><span class="txt"><span class="titulo">Extensões do VS Code (recomendadas): GitLens e GitHub Pull Requests</span><small>Opcionais. Ajudam a ver o histórico e o diff lado a lado. Marque quando instalar ou decidir seguir sem elas.</small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r6"><span class="txt"><span class="titulo">Navegador com DevTools (Edge ou Chrome)</span><small>F12 abre o Console, onde o erro da PR aparece.</small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r7"><span class="txt"><span class="titulo">Arquivo de partida <code>atividade-code-review_script.ps1</code></span><small>Fornecido pelo professor. O código completo também está no Anexo desta página.</small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r8"><span class="txt"><span class="titulo">Roteiro de atividade prática “Boas práticas de Code Review” (SEDUC-SP)</span><small>Material de referência da aula.</small></span></label></li>
+      <li><label class="check"><input type="checkbox" class="item" id="r9"><span class="txt"><span class="titulo">Caderno para os registros pedidos no roteiro</span></span></label></li>
+    </ul>
+  </section>
+
+  <!-- 3b. Passos -->
+  <section aria-labelledby="passos-h">
+    <h2 id="passos-h">Procedimento passo a passo</h2>
+    <p class="muted">Cada passo indica onde executar: <span class="amb"><span class="chip ps">PowerShell</span><span class="chip git">Git</span><span class="chip vs">VS Code</span><span class="chip web">Navegador</span></span>. Comandos Git também rodam no PowerShell.</p>
+
+    <!-- Preparação -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Preparação</span><h3>Montar o ambiente</h3></div>
+
+      <div class="passo" id="p-s1">
+        <input type="checkbox" class="item" id="s1">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">01</span><label class="titulo" for="s1">Conferir as versões das ferramentas</label><span class="amb"><span class="chip ps">PowerShell</span></span></div>
+          <p>Abra o PowerShell e rode um comando por vez. Compare com as versões mínimas do quadro de contexto.</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>git --version
+node -v
+npm -v
+code --version</code></pre></div>
+          <p class="alerta">Se algum comando der “não é reconhecido”, instale a ferramenta (comandos na lista de recursos), <strong>feche e abra o PowerShell</strong> e tente de novo.</p>
+        </div>
+      </div>
+
+      <div class="passo" id="p-s2">
+        <input type="checkbox" class="item" id="s2">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">02</span><label class="titulo" for="s2">Executar o script de preparação</label><span class="amb"><span class="chip ps">PowerShell</span></span></div>
+          <p>Vá até a pasta onde salvou o script e execute. O parâmetro <code>-ExecutionPolicy Bypass</code> libera a execução só para este comando, sem mudar a configuração do computador.</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>cd $HOME\Downloads
+powershell -ExecutionPolicy Bypass -File .\atividade-code-review_script.ps1</code></pre></div>
+          <p>Opções: <code>-Destino C:\lab\grupo3</code> muda a pasta; <code>-Porta 8090</code> muda a porta; <code>-SemServidor</code> não inicia o preview.</p>
+          <p class="esperado">Esperado: resumo final com os passos em <strong>OK</strong> e o lint como <strong>ESPERADO</strong> (ele deve barrar a PR). Se aparecer <strong>FALHA</strong>, siga o “Como corrigir” mostrado e rode o script de novo.</p>
+        </div>
+      </div>
+
+      <div class="passo" id="p-s3">
+        <input type="checkbox" class="item" id="s3">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">03</span><label class="titulo" for="s3">Abrir o projeto e ver o histórico</label><span class="amb"><span class="chip ps">PowerShell</span><span class="chip git">Git</span><span class="chip vs">VS Code</span></span></div>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>cd "$HOME\Documents\atividade-code-review"
+code .
+git status
+git log --oneline --graph --all</code></pre></div>
+          <p class="esperado">Esperado: você está na branch <code>feature/validacao-token</code>, com dois commits: <code>chore: estrutura inicial…</code> (main) e <code>ajustes</code> (a PR).</p>
+        </div>
+      </div>
+
+      <div class="passo" id="p-s4">
+        <input type="checkbox" class="item" id="s4">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">04</span><label class="titulo" for="s4">Testar a PR no navegador e reproduzir o erro</label><span class="amb"><span class="chip web">Navegador</span></span></div>
+          <ol>
+            <li>Abra <code>http://localhost:8080</code> (o script já abre sozinho no Windows).</li>
+            <li>Digite <code>tk_a1b2c3d4e5f6a7b8</code> e clique em <strong>Validar</strong>: aparece “Token válido”.</li>
+            <li>Apague o campo, deixe <strong>vazio</strong> e clique em <strong>Validar</strong>: nada acontece na tela.</li>
+            <li>Pressione <kbd>F12</kbd> › aba <strong>Console</strong>.</li>
+          </ol>
+          <p class="esperado">Esperado no Console: a linha <code>token recebido: …</code> (o token vazou no log) e o erro <code>TypeError: Cannot read properties of undefined (reading 'length')</code>. Guardem essas duas evidências para a revisão.</p>
+          <p class="muted">Se o preview não abrir: na pasta do projeto rode <code>npm start</code> e deixe a janela aberta.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Etapa 1 -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Etapa 1</span><h3>O problema da revisão</h3></div>
+      <div class="passo" id="p-s5">
+        <input type="checkbox" class="item" id="s5">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">05</span><label class="titulo" for="s5">Analisar a PR sem descrição e a revisão “Tá ruim. Refaz.”</label><span class="amb"><span class="chip git">Git</span></span></div>
+          <p>Vejam o que o autor entregou para quem vai revisar:</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>git show --stat HEAD
+git log -1 --format="%an | %s%n%b"</code></pre></div>
+          <p>O commit se chama apenas <code>ajustes</code> e não tem corpo. Agora imaginem que o revisor respondeu só “Tá ruim. Refaz.”. Discutam em grupo e registrem no caderno:</p>
+          <ul>
+            <li>O que está faltando nessa revisão?</li>
+            <li>O problema está só no código?</li>
+            <li>Como isso pode gerar conflito no time?</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Etapa 2 -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Etapa 2</span><h3>O mínimo de uma boa PR</h3></div>
+      <div class="passo" id="p-s6">
+        <input type="checkbox" class="item" id="s6">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">06</span><label class="titulo" for="s6">Conhecer o modelo de PR do repositório</label><span class="amb"><span class="chip vs">VS Code</span></span></div>
+          <p>Abra o modelo. No GitHub, o arquivo em <code>.github/pull_request_template.md</code> é carregado automaticamente no corpo de toda PR nova.</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>code .github\pull_request_template.md</code></pre></div>
+          <p>Discutam: por que isso ajuda quem revisa? O que acontece quando essas informações não existem?</p>
+        </div>
+      </div>
+      <div class="passo" id="p-s7">
+        <input type="checkbox" class="item" id="s7">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">07</span><label class="titulo" for="s7">Autor(a): preencher a descrição da PR</label><span class="amb"><span class="chip ps">PowerShell</span><span class="chip vs">VS Code</span></span></div>
+          <p>Copie o modelo para <code>revisao\PR-descricao.md</code> e preencha. Use o exemplo abaixo como referência; escreva com as palavras do grupo.</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>Copy-Item .github\pull_request_template.md revisao\PR-descricao.md
+code revisao\PR-descricao.md</code></pre></div>
+          <div class="codigo quebra"><div class="cab"><span>revisao/PR-descricao.md (exemplo preenchido)</span><button type="button" class="copiar">Copiar</button></div><pre><code>## O que foi feito
+Adicionei a função `chk` em `src/token.js`, que valida o formato do token
+(prefixo `tk_` + 16 letras/números), e liguei essa validação ao botão
+"Validar" em `app.js`. A tela agora mostra "Token válido" ou "Token inválido".
+
+## Por que essa mudança foi necessária
+Antes a tela só mascarava o que fosse digitado, mesmo que não fosse um token.
+O login precisa recusar tokens fora do formato antes de chamar o servidor.
+
+## Como testar
+1. `npm test` e `npm run lint`
+2. `npm start` e abrir http://localhost:8080
+3. Digitar `tk_a1b2c3d4e5f6a7b8` e clicar em Validar
+4. Repetir com o campo vazio e com `abc`
+Resultado esperado: válido no passo 3; "Token inválido." no passo 4, sem erro no Console (F12).
+
+## Checklist do autor (antes de pedir revisão)
+- [x] `npm test` passou localmente
+- [ ] `npm run lint` terminou sem erros   &lt;- falhou: console.log esquecido
+- [ ] Incluí ou atualizei testes para o caso principal   &lt;- ainda não
+- [ ] Não deixei `console.log` nem dados sensíveis no código
+- [x] A mudança é pequena o bastante para ser revisada em uns 15 minutos</code></pre></div>
+          <p class="muted">Repare: preenchendo com honestidade, o autor já percebe que falta teste e que há um <code>console.log</code>. É para isso que serve o checklist do autor.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Etapa 3 -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Etapa 3</span><h3>LGTM × <em>change-request</em></h3></div>
+      <div class="passo" id="p-s8">
+        <input type="checkbox" class="item" id="s8">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">08</span><label class="titulo" for="s8">Revisor(a): ler o diff e rodar as checagens automáticas</label><span class="amb"><span class="chip git">Git</span><span class="chip ps">PowerShell</span></span></div>
+          <p>Os três pontos em <code>main...feature</code> mostram só o que a branch mudou desde que saiu da main, igual à aba “Files changed” do GitHub.</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>git diff main...feature/validacao-token
+npm test
+npm run lint</code></pre></div>
+          <p class="esperado">Esperado: <code>npm test</code> passa (3 testes, nenhum sobre a função nova) e <code>npm run lint</code> falha com <code>ERRO … console.log esquecido</code> e <code>AVISO … "chk"</code>. Conclusão: checagem automática pega parte dos problemas; o erro com valor vazio e a falta de teste só aparecem com revisão humana.</p>
+          <p class="muted">O mesmo diff está salvo em <code>revisao\diff-pr.txt</code>. No VS Code, a aba Source Control (Ctrl+Shift+G) também mostra as diferenças.</p>
+        </div>
+      </div>
+      <div class="passo" id="p-s9">
+        <input type="checkbox" class="item" id="s9">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">09</span><label class="titulo" for="s9">Classificar comentários e registrar a revisão</label><span class="amb"><span class="chip vs">VS Code</span></span></div>
+          <p>Primeiro, classifiquem os quatro exemplos do roteiro:</p>
+          <ol>
+            <li>“Só sugiro trocar o nome dessa variável para ficar mais claro.”</li>
+            <li>“Esse trecho pode quebrar quando o valor vier vazio.”</li>
+            <li>“Seria legal reorganizar esse comentário.”</li>
+            <li>“Falta testar o caso principal da funcionalidade.”</li>
+          </ol>
+          <p>Depois, apliquem o mesmo critério à PR real. Abram <code>revisao\REVISAO.md</code>, listem os problemas com arquivo e linha, rotulem cada um e marquem a decisão. Exemplo de revisão completa:</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>code revisao\REVISAO.md</code></pre></div>
+          <div class="codigo quebra"><div class="cab"><span>revisao/REVISAO.md (exemplo preenchido)</span><button type="button" class="copiar">Copiar</button></div><pre><code># Revisão da PR: feature/validacao-token
+
+Revisor(a): Bruno Reis
+Data: (data da aula)
+
+## Checklist aplicado (docs/CHECKLIST_REVISAO.md)
+- [x] A mudança está clara?  -&gt; sim, depois que o autor preencheu PR-descricao.md (o commit "ajustes" não explicava nada)
+- [ ] Há risco de erro?      -&gt; SIM: quebra com valor vazio e expõe o token no log
+- [ ] É possível testar?     -&gt; não há teste para a função nova
+- [x] Os comentários estão respeitosos?
+
+## Comentários
+| # | Arquivo:linha | Rótulo | Comentário |
+|---|---|---|---|
+| 1 | src/token.js:25-26 | bloqueante | Com o campo vazio (ou sem "_"), `v.split('_')[1]` é `undefined` e `corpo.length` lança TypeError; o botão para de responder (reproduzido no Console). Que tal normalizar com `normalizaToken` e retornar `false` antes de ler o corpo? |
+| 2 | src/token.js:23 | bloqueante | O `console.log` grava o token no Console do navegador; token é credencial e não pode aparecer em log. O lint também barra a PR por isso. Pode remover? |
+| 3 | tests/token.test.js | bloqueante | Falta testar o caso principal da função nova: token válido, vazio/nulo e formato errado. Sem isso o erro do item 1 passaria de novo no futuro. |
+| 4 | src/token.js:22 | sugestão | O nome `chk` não deixa claro que a função valida o token. Pode renomear para `validaToken`? (o lint também avisa) |
+| 5 | src/token.js:21 | sugestão | O comentário `// valida` repete o nome da função; um JSDoc dizendo o formato aceito e o retorno ajudaria mais. |
+| 6 | src/token.js:26 | sugestão | Usar `===` em `v.length == TAMANHO`, como no resto do arquivo. |
+| 7 | app.js:8 | elogio | Boa ideia reaproveitar `mascaraToken` na mensagem: o token nunca aparece inteiro na tela. |
+
+## Decisão
+- [ ] LGTM (aprovar)
+- [x] Change-request (pedir mudanças)
+
+Justificativa: os itens 1, 2 e 3 são bloqueantes (bug com valor vazio, exposição de dado sensível e falta de teste do caso principal). Os itens 4 a 6 são sugestões e, sozinhos, não impediriam o LGTM.</code></pre></div>
+          <p class="diff-legenda"><span class="lgtm">LGTM: pode seguir</span><span class="sug">sugestão: não bloqueia</span><span class="cr">change-request: bloqueia</span></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Etapa 4 -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Etapa 4</span><h3>Comentários que ajudam</h3></div>
+      <div class="passo" id="p-s10">
+        <input type="checkbox" class="item" id="s10">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">10</span><label class="titulo" for="s10">Comparar comentários, escrever três regras e registrar a revisão no Git</label><span class="amb"><span class="chip vs">VS Code</span><span class="chip git">Git</span></span></div>
+          <p>Comparem: <strong>A</strong> “Isso está confuso.” × <strong>B</strong> “Esse nome de função não deixa claro que ela valida o <em>token</em>. Pode renomear para algo mais específico?”. Leiam <code>docs\ETIQUETA_COMENTARIOS.md</code>, escrevam três regras para bons comentários e reescrevam o “Tá ruim. Refaz.” da Etapa 1 seguindo as regras. Depois, guardem a revisão no histórico:</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>code docs\ETIQUETA_COMENTARIOS.md
+git add revisao\PR-descricao.md revisao\REVISAO.md
+git commit -m "docs(revisao): registra descrição e revisão da PR de validação de token"</code></pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Correção -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Resposta ao change-request</span><h3>O autor corrige</h3></div>
+      <div class="passo" id="p-s11">
+        <input type="checkbox" class="item" id="s11">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">11</span><label class="titulo" for="s11">Autor(a): corrigir o código e incluir os testes</label><span class="amb"><span class="chip vs">VS Code</span></span></div>
+          <p>Substituam o conteúdo dos três arquivos abaixo. O que muda: <code>chk</code> vira <code>validaToken</code>, o <code>console.log</code> sai, o valor vazio passa a retornar <code>false</code> em vez de quebrar e entram três testes novos.</p>
+          <div class="codigo"><div class="cab"><span>src/token.js (corrigido)</span><button type="button" class="copiar">Copiar</button></div><pre><code>/**
+ * Utilidades de token de acesso usadas pela tela de login.
+ * Formato esperado: prefixo "tk_" + 16 caracteres [a-z0-9] (19 no total).
+ */
+export const PREFIXO = 'tk_';
+export const TAMANHO = 19;
+
+/** Remove espaços extras e padroniza para minúsculas. */
+export function normalizaToken(valor) {
+  if (typeof valor !== 'string') return '';
+  return valor.trim().toLowerCase();
+}
+
+/** Oculta o token para exibição: tk_a1b2************ */
+export function mascaraToken(valor) {
+  const token = normalizaToken(valor);
+  if (token.length &lt;= 7) return token;
+  return token.slice(0, 7) + '*'.repeat(token.length - 7);
+}
+
+/**
+ * Verifica se o valor é um token de acesso válido.
+ * Nunca lança erro: vazio, null ou undefined retornam false.
+ */
+export function validaToken(valor) {
+  const token = normalizaToken(valor);
+  if (!token.startsWith(PREFIXO) || token.length !== TAMANHO) return false;
+  return /^[a-z0-9]{16}$/.test(token.slice(PREFIXO.length));
+}</code></pre></div>
+          <div class="codigo"><div class="cab"><span>app.js (corrigido)</span><button type="button" class="copiar">Copiar</button></div><pre><code>import { validaToken, mascaraToken } from './src/token.js';
+
+const campo = document.querySelector('#token');
+const botao = document.querySelector('#validar');
+const saida = document.querySelector('#resultado');
+
+botao.addEventListener('click', () =&gt; {
+  if (validaToken(campo.value)) {
+    saida.textContent = 'Token válido: ' + mascaraToken(campo.value);
+    saida.className = 'ok';
+  } else {
+    saida.textContent = 'Token inválido. Use tk_ + 16 letras/números.';
+    saida.className = 'erro';
+  }
+});</code></pre></div>
+          <div class="codigo"><div class="cab"><span>tests/token.test.js (corrigido)</span><button type="button" class="copiar">Copiar</button></div><pre><code>import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizaToken, mascaraToken, validaToken } from '../src/token.js';
+
+test('normalizaToken remove espaços e padroniza minúsculas', () =&gt; {
+  assert.equal(normalizaToken('  TK_ABC  '), 'tk_abc');
+});
+
+test('normalizaToken devolve vazio para valores que não são texto', () =&gt; {
+  assert.equal(normalizaToken(undefined), '');
+  assert.equal(normalizaToken(null), '');
+});
+
+test('mascaraToken mantém visíveis só os 7 primeiros caracteres', () =&gt; {
+  assert.equal(mascaraToken('tk_a1b2c3d4e5f6a7b8'), 'tk_a1b2************');
+});
+
+// Novos testes pedidos na revisão (change-request)
+test('validaToken aceita um token no formato correto', () =&gt; {
+  assert.equal(validaToken('tk_a1b2c3d4e5f6a7b8'), true);
+  assert.equal(validaToken('  TK_A1B2C3D4E5F6A7B8 '), true);
+});
+
+test('validaToken recusa vazio, null e undefined sem lançar erro', () =&gt; {
+  assert.equal(validaToken(''), false);
+  assert.equal(validaToken(null), false);
+  assert.equal(validaToken(undefined), false);
+});
+
+test('validaToken recusa prefixo, tamanho ou caracteres errados', () =&gt; {
+  assert.equal(validaToken('xx_a1b2c3d4e5f6a7b8'), false);
+  assert.equal(validaToken('tk_a1b2'), false);
+  assert.equal(validaToken('tk_a1b2c3d4e5f6a7b!'), false);
+});</code></pre></div>
+        </div>
+      </div>
+      <div class="passo" id="p-s12">
+        <input type="checkbox" class="item" id="s12">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">12</span><label class="titulo" for="s12">Rodar as checagens de novo e fazer um commit descritivo</label><span class="amb"><span class="chip ps">PowerShell</span><span class="chip git">Git</span><span class="chip web">Navegador</span></span></div>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>npm test
+npm run lint
+git add src\token.js app.js tests\token.test.js
+git commit -m "fix(token): valida token sem quebrar com valor vazio" -m "Renomeia chk para validaToken, remove console.log que expunha o token e adiciona testes para token válido, vazio/nulo e formato errado."</code></pre></div>
+          <p class="esperado">Esperado: <code># pass 6</code> e <code># fail 0</code> nos testes; lint com <code>0 erro(s), 0 aviso(s)</code>. No navegador (Ctrl+F5), clicar em Validar com o campo vazio agora mostra “Token inválido…” e o Console fica limpo.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Re-revisão e merge -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Fechamento da PR</span><h3>Nova revisão, LGTM e merge</h3></div>
+      <div class="passo" id="p-s13">
+        <input type="checkbox" class="item" id="s13">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">13</span><label class="titulo" for="s13">Revisor(a): revisar de novo, aprovar e integrar na main</label><span class="amb"><span class="chip git">Git</span><span class="chip ps">PowerShell</span></span></div>
+          <p>Vejam só o que mudou desde a revisão, atualizem a decisão em <code>REVISAO.md</code> para LGTM e façam o merge sem fast-forward, para a PR ficar visível no grafo.</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>git diff HEAD~1 -- src app.js tests
+git add revisao\REVISAO.md
+git commit -m "docs(revisao): LGTM após correções"
+git switch main
+git merge --no-ff feature/validacao-token -m "Merge PR: validação de token (revisada, LGTM)"
+git log --oneline --graph --all
+npm run check</code></pre></div>
+          <p class="esperado">Esperado: o grafo mostra a branch saindo e voltando para a main com o commit de merge; <code>npm run check</code> roda lint e testes sem erro na main.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Etapa 5 -->
+    <div class="grupo">
+      <div class="grupo-cab"><span class="etapa">Etapa 5</span><h3>Síntese</h3></div>
+      <div class="passo" id="p-s14">
+        <input type="checkbox" class="item" id="s14">
+        <div class="corpo">
+          <div class="titulo-passo"><span class="num">14</span><label class="titulo" for="s14">Montar o minichecklist do time e responder à síntese</label><span class="amb"><span class="chip vs">VS Code</span><span class="chip git">Git</span></span></div>
+          <p>Ajustem <code>docs\CHECKLIST_REVISAO.md</code> com 3 ou 4 itens que o grupo realmente usaria. Respondam: como esse checklist ajuda o time? Como ele evita discussões desnecessárias?</p>
+          <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>code docs\CHECKLIST_REVISAO.md
+git add docs\CHECKLIST_REVISAO.md
+git commit -m "docs: minichecklist de revisão do grupo"</code></pre></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="alerta">
+      <strong>Extensão opcional (não conta no progresso):</strong> com uma conta GitHub, criem um repositório vazio, enviem as duas branches e abram uma PR de verdade. O modelo de PR aparece sozinho e a aba Actions roda o arquivo <code>.github/workflows/ci.yml</code>.
+      <div class="codigo"><div class="cab"><span>PowerShell</span><button type="button" class="copiar">Copiar</button></div><pre><code>git remote add origin https://github.com/USUARIO/code-review-lab.git
+git push -u origin main
+git switch -c feature/nova-melhoria
+git push -u origin feature/nova-melhoria</code></pre></div>
+    </div>
+  </section>
+
+  <!-- 4. Respostas -->
+  <section aria-labelledby="resp-h">
+    <h2 id="resp-h">Respostas e rubrica</h2>
+    <div class="bloqueio" id="bloqueio">
+      <strong>Respostas bloqueadas</strong>
+      <p id="bloqueio-txt">Elas aparecem quando o progresso chegar a 50%.</p>
+    </div>
+    <div id="respostas" hidden>
+      <div class="grupo">
+        <article class="resposta">
+  <h3><span class="etapa">Etapa 1</span>O problema da revisão</h3>
+  <div class="qa"><p class="q">O que está faltando nessa revisão?</p>
+    <ul class="a">
+      <li>Do lado do autor: descrição da PR (o que foi feito, por que, como testar) e uma mensagem de commit que diga algo. “ajustes” não informa nada.</li>
+      <li>Do lado do revisor: dizer <strong>onde</strong> está o problema (arquivo e linha), <strong>por que</strong> é um problema, <strong>o que</strong> fazer e se aquilo bloqueia ou é só sugestão.</li>
+      <li>Do lado do time: critérios combinados para aprovar ou pedir mudança.</li>
+    </ul></div>
+  <div class="qa"><p class="q">O problema está só no código?</p>
+    <p class="a">Não. Está também no processo (sem modelo de PR, sem checklist, sem checagem automática) e na comunicação dos dois lados: a PR chega sem contexto e o comentário chega sem conteúdo.</p></div>
+  <div class="qa"><p class="q">Como isso pode gerar conflito no time?</p>
+    <p class="a">“Tá ruim. Refaz.” soa como julgamento da pessoa. O autor fica na defensiva, não sabe o que corrigir e refaz no escuro; surgem idas e vindas, atraso e retrabalho. Com o tempo, as pessoas evitam abrir PR ou passam a aprovar sem ler para não brigar.</p></div>
+  <div class="rubrica"><span class="eyebrow">Rubrica · 1,0 ponto</span>
+    <p>0,5: cita pelo menos duas faltas (contexto da PR e comentário sem motivo/sugestão). 0,25: reconhece que o problema também é de processo/comunicação. 0,25: descreve um efeito concreto no time (retrabalho, atrito, atraso). Resposta só “faltou educação” = 0,25 no máximo.</p></div>
+</article>
+
+<article class="resposta">
+  <h3><span class="etapa">Etapa 2</span>O mínimo de uma boa PR</h3>
+  <div class="qa"><p class="q">Por que isso ajuda quem revisa?</p>
+    <p class="a">O revisor entende o objetivo antes de ler o diff, sabe exatamente como testar e consegue julgar se o código faz o que promete. A revisão fica mais rápida e focada, e a PR vira documentação da decisão no histórico.</p></div>
+  <div class="qa"><p class="q">O que acontece quando essas informações não existem?</p>
+    <p class="a">O revisor precisa adivinhar a intenção ou perguntar (mais ciclos). Pode aprovar algo que não entendeu, bloquear algo por engano ou testar o caso errado. Meses depois, ninguém sabe por que a mudança foi feita.</p></div>
+  <div class="rubrica"><span class="eyebrow">Rubrica · 1,5 ponto</span>
+    <p>0,5 por seção preenchida em <code>revisao/PR-descricao.md</code>: “O que foi feito” cita arquivos/funções; “Por que” traz a necessidade; “Como testar” tem passos que outra pessoa consegue repetir e o resultado esperado. Seção vazia ou genérica (“testei e funciona”) = 0.</p></div>
+</article>
+
+<article class="resposta">
+  <h3><span class="etapa">Etapa 3</span>LGTM × <em>change-request</em></h3>
+  <div class="tabela">
+    <table>
+      <thead><tr><th>Exemplo</th><th>Classificação</th><th>Motivo</th></tr></thead>
+      <tbody>
+        <tr><td>1. Trocar o nome da variável</td><td><span class="sug">sugestão (LGTM)</span></td><td>Melhora a leitura; o código funciona igual.</td></tr>
+        <tr><td>2. Pode quebrar com valor vazio</td><td><span class="cr">change-request</span></td><td>Erro em produção. Na PR do laboratório ele acontece de fato.</td></tr>
+        <tr><td>3. Reorganizar o comentário</td><td><span class="sug">sugestão (LGTM)</span></td><td>Estilo; não afeta o funcionamento.</td></tr>
+        <tr><td>4. Falta testar o caso principal</td><td><span class="cr">change-request</span></td><td>Sem teste não dá para garantir que funciona nem que vai continuar funcionando.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="qa"><p class="q">O que diferencia uma sugestão de um bloqueio?</p>
+    <p class="a">O impacto. Bloqueio afeta funcionamento, segurança ou a capacidade de verificar a mudança (bug, dado sensível exposto, falta de teste do caso principal, checagem automática falhando). Sugestão é preferência de estilo ou legibilidade: o código funciona sem ela e ela pode virar uma tarefa futura.</p></div>
+  <div class="qa"><p class="q">Quando usar LGTM?</p>
+    <p class="a">Quando a mudança cumpre o objetivo descrito, as checagens automáticas passam, o caso principal está testado e não há risco conhecido. Sugestões pendentes não impedem: dá para aprovar e deixar os comentários.</p></div>
+  <div class="qa"><p class="q">Quando pedir um <em>change-request</em>?</p>
+    <p class="a">Quando existe bug ou risco real, falta teste do caso principal, o lint ou os testes falham, há dado sensível exposto ou a mudança não faz o que a PR promete.</p></div>
+  <div class="qa"><p class="q">Na PR do laboratório</p>
+    <p class="a">Três bloqueantes (TypeError com valor vazio, <code>console.log</code> do token, nenhum teste para a função nova) e três sugestões (nome <code>chk</code>, comentário <code>// valida</code>, <code>==</code> em vez de <code>===</code>). Decisão correta: <strong>change-request</strong>.</p></div>
+  <div class="rubrica"><span class="eyebrow">Rubrica · 2,5 pontos</span>
+    <p>1,0: classificação dos quatro exemplos (0,25 cada; 1 e 3 sugestão; 2 e 4 change-request). 0,5: explica a diferença pelo impacto, não pelo tom. 0,5: <code>REVISAO.md</code> aponta com arquivo/linha pelo menos o erro com valor vazio e o <code>console.log</code>. 0,5: decisão “change-request” com justificativa. Aprovar a PR original com LGTM zera os dois últimos itens.</p></div>
+</article>
+
+<article class="resposta">
+  <h3><span class="etapa">Etapa 4</span>Comentários que ajudam</h3>
+  <div class="qa"><p class="q">Qual comentário ajuda mais?</p>
+    <p class="a">O <strong>B</strong>. Diz onde está o problema (o nome da função), por que é um problema (não deixa claro que valida o token) e qual é o próximo passo (renomear para algo mais específico). O A não dá nada para o autor fazer.</p></div>
+  <div class="qa"><p class="q">Qual tende a gerar menos atrito?</p>
+    <p class="a">O <strong>B</strong>. Fala do código e não da pessoa, termina com uma pergunta que convida a conversar e mostra que o revisor leu com atenção.</p></div>
+  <div class="qa"><p class="q">O que um bom comentário precisa ter?</p>
+    <p class="a">Local específico, motivo ou impacto, sugestão concreta, o peso deixado claro (bloqueante ou sugestão) e tom respeitoso focado no código. Quando couber, um elogio ao que está bom.</p></div>
+  <div class="qa"><p class="q">Três regras para bons comentários</p>
+    <ul class="a">
+      <li><strong>Explique o motivo:</strong> diga o que pode dar errado ou o que fica difícil de entender.</li>
+      <li><strong>Sugira uma melhoria:</strong> proponha nome, trecho ou teste.</li>
+      <li><strong>Fale do código, não da pessoa:</strong> “esta função…” em vez de “você fez errado…”.</li>
+    </ul></div>
+  <div class="qa"><p class="q">“Tá ruim. Refaz.” reescrito</p>
+    <p class="a"><code>bloqueante:</code> em <code>src/token.js:25</code>, com o campo vazio <code>split('_')[1]</code> vira <code>undefined</code> e <code>corpo.length</code> lança erro (aparece no Console). Que tal usar <code>normalizaToken</code> e retornar <code>false</code> antes? Também senti falta de um teste para esse caso.</p></div>
+  <div class="rubrica"><span class="eyebrow">Rubrica · 1,5 ponto</span>
+    <p>0,5: escolhe B e justifica com pelo menos dois elementos (motivo, sugestão, foco no código). 0,5: três regras distintas e aplicáveis. 0,5: reescrita do “Tá ruim. Refaz.” com local, motivo, sugestão e rótulo.</p></div>
+</article>
+
+<article class="resposta">
+  <h3><span class="etapa">Correção e merge</span>Passos 11 a 13</h3>
+  <div class="qa"><p class="q">Como saber que a correção está pronta para LGTM?</p>
+    <p class="a"><code>npm test</code> mostra 6 testes passando e 0 falhas, <code>npm run lint</code> termina com 0 erros e 0 avisos, o campo vazio mostra “Token inválido…” sem erro no Console e o commit explica o que mudou e por quê.</p></div>
+  <div class="rubrica"><span class="eyebrow">Rubrica · 1,5 ponto</span>
+    <p>0,5: testes 6/6. 0,5: lint sem erros. 0,5: <code>git log --oneline --graph</code> mostra o commit de correção com mensagem descritiva e o merge <code>--no-ff</code> na main.</p></div>
+</article>
+
+<article class="resposta">
+  <h3><span class="etapa">Etapa 5</span>Síntese</h3>
+  <div class="qa"><p class="q">Minichecklist de referência</p>
+    <ul class="a">
+      <li>A mudança está clara (descrição da PR e commits)?</li>
+      <li>Há risco de erro (vazio, nulo, dado sensível)?</li>
+      <li>É possível testar (teste do caso principal e checagens passando)?</li>
+      <li>O comentário está respeitoso e explica o motivo?</li>
+    </ul></div>
+  <div class="qa"><p class="q">Como esse checklist ajuda o time?</p>
+    <p class="a">Todo mundo revisa com o mesmo critério, inclusive quem está começando. O autor confere a própria PR antes de pedir revisão, então menos problemas chegam ao revisor e a revisão anda mais rápido. Fica mais difícil um bug óbvio, como o do valor vazio, passar despercebido.</p></div>
+  <div class="qa"><p class="q">Como ele evita discussões desnecessárias?</p>
+    <p class="a">A decisão passa a se apoiar em critérios combinados antes, e não no gosto de quem revisa. O checklist separa o que bloqueia do que é sugestão, e as checagens automáticas tiram da conversa os pontos de padrão (como <code>console.log</code>). Com comentários respeitosos, sobra menos espaço para a defensiva.</p></div>
+  <div class="rubrica"><span class="eyebrow">Rubrica · 1,0 ponto</span>
+    <p>0,5: checklist com 3 ou 4 itens verificáveis (dá para responder sim ou não). 0,5: responde às duas perguntas citando critério comum e separação entre bloqueio e sugestão.</p></div>
+</article>
+
+<article class="resposta">
+  <h3><span class="etapa">Resumo</span>Distribuição dos pontos</h3>
+  <div class="tabela">
+    <table>
+      <thead><tr><th>Critério</th><th>Certo quando…</th><th>Pontos</th></tr></thead>
+      <tbody>
+        <tr><td>Ambiente (passos 1–4)</td><td>Script sem FALHA, preview aberta, TypeError reproduzido no Console</td><td class="pts">1,0</td></tr>
+        <tr><td>Etapa 1</td><td>Faltas identificadas + processo/comunicação + efeito no time</td><td class="pts">1,0</td></tr>
+        <tr><td>Etapa 2</td><td>PR-descricao.md com as três seções verificáveis</td><td class="pts">1,5</td></tr>
+        <tr><td>Etapa 3</td><td>Classificação 1/3 sugestão, 2/4 change-request; REVISAO.md e decisão corretas</td><td class="pts">2,5</td></tr>
+        <tr><td>Etapa 4</td><td>Escolha justificada, três regras, reescrita do comentário</td><td class="pts">1,5</td></tr>
+        <tr><td>Correção e merge</td><td>Testes 6/6, lint limpo, merge --no-ff no log</td><td class="pts">1,5</td></tr>
+        <tr><td>Etapa 5</td><td>Checklist verificável + duas respostas</td><td class="pts">1,0</td></tr>
+        <tr><td><strong>Total</strong></td><td></td><td class="pts">10,0</td></tr>
+      </tbody>
+    </table>
+  </div>
+</article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Anexo -->
+  <section aria-labelledby="anexo-h">
+    <h2 id="anexo-h">Anexo: código completo dos arquivos</h2>
+    <p class="muted">O script cria todos estes arquivos sozinho. Estão aqui para consulta, cópia manual ou conferência. A coluna da direita indica a branch.</p>
+    <div class="arquivos">
+      <details class="arquivo"><summary><span>package.json</span><span class="chip git">main</span><span class="muted">scripts de teste, lint e preview</span></summary><div class="codigo"><div class="cab"><span>package.json</span><button type="button" class="copiar">Copiar</button></div><pre><code>{
+  "name": "code-review-lab",
+  "version": "1.0.0",
+  "description": "Laboratório de Code Review - Versionamento de Código",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/token.test.js",
+    "lint": "node scripts/lint.js",
+    "check": "npm run lint &amp;&amp; npm test",
+    "start": "node server.cjs"
+  }
+}</code></pre></div></details>
+      <details class="arquivo"><summary><span>index.html</span><span class="chip git">main</span><span class="muted">tela do validador</span></summary><div class="codigo"><div class="cab"><span>index.html</span><button type="button" class="copiar">Copiar</button></div><pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="pt-BR"&gt;
+&lt;head&gt;
+  &lt;meta charset="UTF-8"&gt;
+  &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+  &lt;title&gt;Validador de Token&lt;/title&gt;
+  &lt;link rel="stylesheet" href="style.css"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;main class="cartao"&gt;
+    &lt;h1&gt;Validador de Token&lt;/h1&gt;
+    &lt;p class="dica"&gt;Formato esperado: &lt;code&gt;tk_&lt;/code&gt; + 16 letras/números (ex.: &lt;code&gt;tk_a1b2c3d4e5f6a7b8&lt;/code&gt;)&lt;/p&gt;
+    &lt;label for="token"&gt;Token de acesso&lt;/label&gt;
+    &lt;input id="token" type="text" autocomplete="off" placeholder="tk_..."&gt;
+    &lt;button id="validar" type="button"&gt;Validar&lt;/button&gt;
+    &lt;p id="resultado" role="status"&gt;&lt;/p&gt;
+  &lt;/main&gt;
+  &lt;script type="module" src="app.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre></div></details>
+      <details class="arquivo"><summary><span>style.css</span><span class="chip git">main</span></summary><div class="codigo"><div class="cab"><span>style.css</span><button type="button" class="copiar">Copiar</button></div><pre><code>* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  background: #11161d;
+  color: #e6edf3;
+}
+.cartao {
+  width: min(420px, 92vw);
+  padding: 24px;
+  border: 1px solid #2d3743;
+  border-radius: 10px;
+  background: #161d26;
+  display: grid;
+  gap: 10px;
+}
+h1 { margin: 0; font-size: 1.4rem; }
+.dica { margin: 0; color: #9aa7b4; font-size: .9rem; }
+code { font-family: Consolas, monospace; color: #f0c674; }
+input, button { font: inherit; padding: 10px 12px; border-radius: 6px; }
+input { border: 1px solid #3a4654; background: #0d1117; color: inherit; }
+button { border: 0; background: #2f81f7; color: #fff; cursor: pointer; }
+button:hover { background: #1f6feb; }
+#resultado { min-height: 1.4em; margin: 0; font-weight: 600; }
+#resultado.ok { color: #3fb950; }
+#resultado.erro { color: #f85149; }</code></pre></div></details>
+      <details class="arquivo"><summary><span>app.js</span><span class="chip git">main</span><span class="muted">versão da main</span></summary><div class="codigo"><div class="cab"><span>app.js</span><button type="button" class="copiar">Copiar</button></div><pre><code>import { mascaraToken } from './src/token.js';
+
+const campo = document.querySelector('#token');
+const botao = document.querySelector('#validar');
+const saida = document.querySelector('#resultado');
+
+botao.addEventListener('click', () =&gt; {
+  saida.textContent = 'Token informado: ' + mascaraToken(campo.value);
+  saida.className = '';
+});</code></pre></div></details>
+      <details class="arquivo"><summary><span>src/token.js</span><span class="chip git">main</span><span class="muted">versão da main</span></summary><div class="codigo"><div class="cab"><span>src/token.js</span><button type="button" class="copiar">Copiar</button></div><pre><code>/**
+ * Utilidades de token de acesso usadas pela tela de login.
+ * Formato esperado: prefixo "tk_" + 16 caracteres [a-z0-9] (19 no total).
+ */
+export const PREFIXO = 'tk_';
+export const TAMANHO = 19;
+
+/** Remove espaços extras e padroniza para minúsculas. */
+export function normalizaToken(valor) {
+  if (typeof valor !== 'string') return '';
+  return valor.trim().toLowerCase();
+}
+
+/** Oculta o token para exibição: tk_a1b2************ */
+export function mascaraToken(valor) {
+  const token = normalizaToken(valor);
+  if (token.length &lt;= 7) return token;
+  return token.slice(0, 7) + '*'.repeat(token.length - 7);
+}</code></pre></div></details>
+      <details class="arquivo"><summary><span>tests/token.test.js</span><span class="chip git">main</span><span class="muted">versão da main</span></summary><div class="codigo"><div class="cab"><span>tests/token.test.js</span><button type="button" class="copiar">Copiar</button></div><pre><code>import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizaToken, mascaraToken } from '../src/token.js';
+
+test('normalizaToken remove espaços e padroniza minúsculas', () =&gt; {
+  assert.equal(normalizaToken('  TK_ABC  '), 'tk_abc');
+});
+
+test('normalizaToken devolve vazio para valores que não são texto', () =&gt; {
+  assert.equal(normalizaToken(undefined), '');
+  assert.equal(normalizaToken(null), '');
+});
+
+test('mascaraToken mantém visíveis só os 7 primeiros caracteres', () =&gt; {
+  assert.equal(mascaraToken('tk_a1b2c3d4e5f6a7b8'), 'tk_a1b2************');
+});</code></pre></div></details>
+      <details class="arquivo"><summary><span>scripts/lint.js</span><span class="chip git">main</span><span class="muted">checagem automática</span></summary><div class="codigo"><div class="cab"><span>scripts/lint.js</span><button type="button" class="copiar">Copiar</button></div><pre><code>// Checagem automática simples (sem dependências), usada no CI e localmente.
+//   ERRO  -&gt; bloqueia (código de saída 1): console.log esquecido
+//   AVISO -&gt; não bloqueia: nome de função com menos de 4 caracteres
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const arquivos = ['app.js', ...readdirSync('src')
+  .filter((nome) =&gt; nome.endsWith('.js'))
+  .map((nome) =&gt; join('src', nome))];
+
+let erros = 0;
+let avisos = 0;
+
+for (const caminho of arquivos) {
+  readFileSync(caminho, 'utf8').split(/\r?\n/).forEach((linha, i) =&gt; {
+    const onde = `${caminho}:${i + 1}`;
+    if (/console\.log\(/.test(linha)) {
+      erros++;
+      console.log(`ERRO  ${onde}  console.log esquecido (pode expor dados, como o token)`);
+    }
+    const funcao = linha.match(/function\s+([A-Za-z_$][\w$]*)/);
+    if (funcao &amp;&amp; funcao[1].length &lt; 4) {
+      avisos++;
+      console.log(`AVISO ${onde}  nome de função pouco descritivo: "${funcao[1]}"`);
+    }
+  });
+}
+
+console.log(`\nResultado: ${erros} erro(s), ${avisos} aviso(s) em ${arquivos.length} arquivo(s).`);
+process.exit(erros &gt; 0 ? 1 : 0);</code></pre></div></details>
+      <details class="arquivo"><summary><span>server.cjs</span><span class="chip git">main</span><span class="muted">servidor de preview</span></summary><div class="codigo"><div class="cab"><span>server.cjs</span><button type="button" class="copiar">Copiar</button></div><pre><code>// Servidor estático mínimo para pré-visualização (sem dependências).
+// Uso: node server.cjs   (porta padrão 8080; se ocupada, tenta as 10 seguintes)
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const RAIZ = __dirname;
+const TIPOS = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon'
+};
+
+let porta = Number(process.env.PORT) || 8080;
+const portaMaxima = porta + 10;
+
+const servidor = http.createServer((req, res) =&gt; {
+  const url = decodeURIComponent(req.url.split('?')[0]);
+  const arquivo = path.normalize(path.join(RAIZ, url === '/' ? 'index.html' : url));
+  if (!arquivo.startsWith(RAIZ)) {
+    res.writeHead(403);
+    return res.end('Acesso negado');
+  }
+  fs.readFile(arquivo, (erro, dados) =&gt; {
+    if (erro) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Não encontrado: ' + url);
+    }
+    res.writeHead(200, {
+      'Content-Type': TIPOS[path.extname(arquivo).toLowerCase()] || 'application/octet-stream',
+      'Cache-Control': 'no-store'
+    });
+    res.end(dados);
+  });
+});
+
+servidor.on('error', (erro) =&gt; {
+  if (erro.code === 'EADDRINUSE' &amp;&amp; porta &lt; portaMaxima) {
+    porta++;
+    servidor.listen(porta);
+  } else {
+    console.error('Falha ao iniciar o servidor: ' + erro.message);
+    process.exit(1);
+  }
+});
+
+servidor.on('listening', () =&gt; {
+  fs.writeFileSync(path.join(RAIZ, '.preview-port'), String(porta));
+  console.log(`Preview em http://localhost:${porta}  (Ctrl+C para parar)`);
+});
+
+servidor.listen(porta);</code></pre></div></details>
+      <details class="arquivo"><summary><span>.gitignore</span><span class="chip git">main</span></summary><div class="codigo"><div class="cab"><span>.gitignore</span><button type="button" class="copiar">Copiar</button></div><pre><code>node_modules/
+.preview-port
+*.log
+revisao/diff-pr.txt</code></pre></div></details>
+      <details class="arquivo"><summary><span>.github/pull_request_template.md</span><span class="chip git">main</span><span class="muted">modelo de PR</span></summary><div class="codigo quebra"><div class="cab"><span>.github/pull_request_template.md</span><button type="button" class="copiar">Copiar</button></div><pre><code>## O que foi feito
+&lt;!-- Descreva a mudança em 1 a 3 frases. --&gt;
+
+## Por que essa mudança foi necessária
+&lt;!-- Problema, tarefa ou issue relacionada (ex.: Closes #12). --&gt;
+
+## Como testar
+1. 
+2. 
+Resultado esperado:
+
+## Checklist do autor (antes de pedir revisão)
+- [ ] `npm test` passou localmente
+- [ ] `npm run lint` terminou sem erros
+- [ ] Incluí ou atualizei testes para o caso principal
+- [ ] Não deixei `console.log` nem dados sensíveis no código
+- [ ] A mudança é pequena o bastante para ser revisada em uns 15 minutos</code></pre></div></details>
+      <details class="arquivo"><summary><span>.github/workflows/ci.yml</span><span class="chip git">main</span><span class="muted">checagens no GitHub Actions</span></summary><div class="codigo"><div class="cab"><span>.github/workflows/ci.yml</span><button type="button" class="copiar">Copiar</button></div><pre><code>name: Checagens automáticas
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lint (padrões do time)
+        run: npm run lint
+      - name: Testes automatizados
+        run: npm test</code></pre></div></details>
+      <details class="arquivo"><summary><span>docs/CHECKLIST_REVISAO.md</span><span class="chip git">main</span></summary><div class="codigo quebra"><div class="cab"><span>docs/CHECKLIST_REVISAO.md</span><button type="button" class="copiar">Copiar</button></div><pre><code># Minichecklist de revisão do time
+
+Use antes de dar LGTM ou pedir mudanças (change-request).
+
+- [ ] **A mudança está clara?** A PR tem "o que", "por que" e "como testar"; os commits têm mensagens descritivas.
+- [ ] **Há risco de erro?** Entradas vazias, nulas ou inesperadas foram tratadas; nada de dados sensíveis em log.
+- [ ] **É possível testar?** Existe teste para o caso principal e as checagens automáticas (lint + testes) passaram.
+- [ ] **O comentário está respeitoso?** Fala do código, explica o motivo e sugere um caminho.
+
+Regra de decisão:
+- Todos os itens OK, só sugestões pendentes -&gt; **LGTM**.
+- Qualquer risco de erro, falta de teste do caso principal ou checagem automática falhando -&gt; **change-request**.</code></pre></div></details>
+      <details class="arquivo"><summary><span>docs/ETIQUETA_COMENTARIOS.md</span><span class="chip git">main</span></summary><div class="codigo quebra"><div class="cab"><span>docs/ETIQUETA_COMENTARIOS.md</span><button type="button" class="copiar">Copiar</button></div><pre><code># Etiqueta de comentários de revisão
+
+Comece cada comentário com um rótulo que diz o peso dele:
+
+| Rótulo | Significado | Bloqueia o merge? |
+|---|---|---|
+| `bloqueante:` | Problema real que precisa ser corrigido | Sim (change-request) |
+| `sugestão:` | Melhoria opcional | Não (pode dar LGTM) |
+| `pergunta:` | Dúvida para entender a decisão | Não, até ser respondida |
+| `elogio:` | Algo bem feito que vale reconhecer | Não |
+
+## Três regras
+1. **Explique o motivo:** diga o que pode dar errado ou o que fica mais difícil de entender.
+2. **Sugira melhorias:** proponha um caminho (nome, trecho de código, teste).
+3. **Fale do código, não da pessoa:** "esta função..." em vez de "você fez errado...".
+
+## Antes e depois
+- Ruim: "Isso está confuso."
+- Bom: "sugestão: o nome `chk` não deixa claro que a função valida o token. Pode renomear para `validaToken`?"</code></pre></div></details>
+      <details class="arquivo"><summary><span>revisao/REVISAO.md</span><span class="chip git">main</span><span class="muted">modelo em branco</span></summary><div class="codigo quebra"><div class="cab"><span>revisao/REVISAO.md</span><button type="button" class="copiar">Copiar</button></div><pre><code># Revisão da PR: feature/validacao-token
+
+Revisor(a):
+Data:
+
+## Checklist aplicado (docs/CHECKLIST_REVISAO.md)
+- [ ] A mudança está clara?
+- [ ] Há risco de erro?
+- [ ] É possível testar?
+- [ ] Os comentários estão respeitosos?
+
+## Comentários
+| # | Arquivo:linha | Rótulo (bloqueante / sugestão / pergunta / elogio) | Comentário |
+|---|---|---|---|
+| 1 |  |  |  |
+| 2 |  |  |  |
+| 3 |  |  |  |
+
+## Decisão
+- [ ] LGTM (aprovar)
+- [ ] Change-request (pedir mudanças)
+
+Justificativa:</code></pre></div></details>
+      <details class="arquivo"><summary><span>README.md</span><span class="chip git">main</span></summary><div class="codigo quebra"><div class="cab"><span>README.md</span><button type="button" class="copiar">Copiar</button></div><pre><code># Laboratório de Code Review
+
+Projeto mínimo usado na aula "Boas práticas de Code Review" (Versionamento de Código).
+
+- `npm test`  - testes automatizados (node:test)
+- `npm run lint` - checagem de padrões do time (scripts/lint.js)
+- `npm start` - preview local em http://localhost:8080
+
+Branches:
+- `main` - versão estável
+- `feature/validacao-token` - "PR" a ser revisada pelo grupo</code></pre></div></details>
+      <details class="arquivo"><summary><span>src/token.js</span><span class="chip git">feature/validacao-token</span><span class="muted">PR com problemas de propósito</span></summary><div class="codigo"><div class="cab"><span>src/token.js</span><button type="button" class="copiar">Copiar</button></div><pre><code>/**
+ * Utilidades de token de acesso usadas pela tela de login.
+ * Formato esperado: prefixo "tk_" + 16 caracteres [a-z0-9] (19 no total).
+ */
+export const PREFIXO = 'tk_';
+export const TAMANHO = 19;
+
+/** Remove espaços extras e padroniza para minúsculas. */
+export function normalizaToken(valor) {
+  if (typeof valor !== 'string') return '';
+  return valor.trim().toLowerCase();
+}
+
+/** Oculta o token para exibição: tk_a1b2************ */
+export function mascaraToken(valor) {
+  const token = normalizaToken(valor);
+  if (token.length &lt;= 7) return token;
+  return token.slice(0, 7) + '*'.repeat(token.length - 7);
+}
+
+// valida
+export function chk(t) {
+  console.log('token recebido:', t);
+  const v = t.trim().toLowerCase();
+  const corpo = v.split('_')[1];
+  return corpo.length === 16 &amp;&amp; v.startsWith(PREFIXO) &amp;&amp; v.length == TAMANHO &amp;&amp; /^[a-z0-9]+$/.test(corpo);
+}</code></pre></div></details>
+      <details class="arquivo"><summary><span>app.js</span><span class="chip git">feature/validacao-token</span><span class="muted">PR com problemas de propósito</span></summary><div class="codigo"><div class="cab"><span>app.js</span><button type="button" class="copiar">Copiar</button></div><pre><code>import { chk, mascaraToken } from './src/token.js';
+
+const campo = document.querySelector('#token');
+const botao = document.querySelector('#validar');
+const saida = document.querySelector('#resultado');
+
+botao.addEventListener('click', () =&gt; {
+  if (chk(campo.value)) {
+    saida.textContent = 'Token válido: ' + mascaraToken(campo.value);
+    saida.className = 'ok';
+  } else {
+    saida.textContent = 'Token inválido.';
+    saida.className = 'erro';
+  }
+});</code></pre></div></details>
+      <details class="arquivo so-web"><summary><span>atividade-code-review_script.ps1</span><span class="chip ps">PowerShell</span><span class="muted">script de preparação completo</span></summary><div class="codigo"><div class="cab"><span>atividade-code-review_script.ps1</span><button type="button" class="copiar">Copiar</button></div><pre><code>&lt;#
+.SYNOPSIS
+  Prepara o laboratório "Boas práticas de Code Review" (Versionamento de Código).
+
+.DESCRIPTION
+  Atividade elaborada pelo Prof. Marcos Souza - Educação Profissional Paulista,
+  Técnico em Desenvolvimento de Sistemas, Versionamento de Código,
+  4º bimestre, Semana 22, Aula 2 - Boas práticas de Code Review.
+
+  O script, sem pedir nenhuma interação:
+    1. verifica Git, Node.js, npm e VS Code;
+    2. cria a pasta do projeto e todos os arquivos do exercício;
+    3. cria o repositório Git com a branch main (versão estável);
+    4. cria a branch feature/validacao-token (a "PR" que o grupo vai revisar);
+    5. roda os testes e o lint (checagens automáticas);
+    6. inicia um servidor local de preview (Node.js, sem dependências);
+    7. mostra um resumo do que funcionou, do que falhou e de como corrigir.
+
+.PARAMETER Destino
+  Pasta onde o projeto será criado. Padrão: Documentos\atividade-code-review
+  (se já existir, cria uma pasta nova com data e hora no nome).
+
+.PARAMETER Porta
+  Porta do servidor de preview. Padrão: 8080 (se ocupada, tenta as 10 seguintes).
+
+.PARAMETER SemServidor
+  Não inicia o servidor de preview.
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File .\atividade-code-review_script.ps1
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File .\atividade-code-review_script.ps1 -Destino C:\lab\grupo3 -Porta 8090
+#&gt;
+[CmdletBinding()]
+param(
+  [string]$Destino = '',
+  [int]$Porta = 8080,
+  [switch]$SemServidor
+)
+
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+$NoWindows = ($env:OS -eq 'Windows_NT')
+$Script:Base = ''
+$Script:Disponivel = @{ git = $false; node = $false; npm = $false; pasta = $false; repo = $false; branch = $false }
+$Script:Resultados = New-Object System.Collections.Generic.List[object]
+$Utf8SemBom = New-Object System.Text.UTF8Encoding($false)
+$Script:UrlPreview = $null
+$Script:PidPreview = $null
+
+# ------------------------------------------------------------------ utilitários
+function Registrar {
+  param([string]$Passo, [string]$Status, [string]$Detalhe = '', [string]$Correcao = '')
+  $Script:Resultados.Add([pscustomobject]@{ Passo = $Passo; Status = $Status; Detalhe = $Detalhe; Correcao = $Correcao })
+  $cor = @{ OK = 'Green'; ESPERADO = 'Cyan'; AVISO = 'Yellow'; FALHA = 'Red'; IGNORADO = 'DarkGray' }[$Status]
+  Write-Host ('[{0,-8}] {1}' -f $Status, $Passo) -ForegroundColor $cor
+  if ($Detalhe) { Write-Host ('           ' + ($Detalhe -split "`n")[0]) -ForegroundColor DarkGray }
+}
+
+function Executar-Passo {
+  param([string]$Nome, [scriptblock]$Acao, [string]$Correcao, [string[]]$Requer = @())
+  foreach ($r in $Requer) {
+    if (-not $Script:Disponivel[$r]) {
+      Registrar $Nome 'IGNORADO' "Depende de um passo anterior que falhou ($r)." "Corrija primeiro o passo relacionado a '$r' e rode o script de novo."
+      return $false
+    }
+  }
+  try {
+    $detalhe = &amp; $Acao
+    Registrar $Nome 'OK' ([string]$detalhe)
+    return $true
+  } catch {
+    Registrar $Nome 'FALHA' $_.Exception.Message $Correcao
+    return $false
+  }
+}
+
+function Invoke-Nativo {
+  param([string]$Exe, [string[]]$Argumentos = @(), [switch]$PermitirFalha)
+  $eap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $saida = &amp; $Exe @Argumentos 2&gt;&amp;1 | ForEach-Object { "$_" }
+    $codigo = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $eap
+  }
+  $texto = (@($saida) -join "`n").Trim()
+  if ($codigo -ne 0 -and -not $PermitirFalha) {
+    throw ("'{0} {1}' terminou com código {2}. {3}" -f $Exe, ($Argumentos -join ' '), $codigo, $texto)
+  }
+  return [pscustomobject]@{ Codigo = $codigo; Saida = $texto }
+}
+
+function Escrever-Arquivo {
+  param([string]$Relativo, [string]$Conteudo)
+  $caminho = Join-Path $Script:Base $Relativo
+  $pasta = Split-Path $caminho -Parent
+  if (-not (Test-Path $pasta)) { New-Item -ItemType Directory -Path $pasta -Force | Out-Null }
+  $texto = ($Conteudo -replace "`r`n", "`n").TrimEnd("`n") + "`n"
+  [System.IO.File]::WriteAllText($caminho, $texto, $Utf8SemBom)
+}
+
+function Escrever-Conjunto {
+  param($Arquivos)
+  foreach ($nome in $Arquivos.Keys) { Escrever-Arquivo $nome $Arquivos[$nome] }
+  return $Arquivos.Count
+}
+
+function Rodar-Git { Invoke-Nativo 'git' ([string[]]$args) }
+
+$NpmExe = 'npm'
+if (Get-Command 'npm.cmd' -ErrorAction SilentlyContinue) { $NpmExe = 'npm.cmd' }
+
+# ------------------------------------------------------------------ conteúdo dos arquivos
+# Versão estável (branch main)
+$ArquivosMain = [ordered]@{
+  'package.json' = @'
+{
+  "name": "code-review-lab",
+  "version": "1.0.0",
+  "description": "Laboratório de Code Review - Versionamento de Código",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/token.test.js",
+    "lint": "node scripts/lint.js",
+    "check": "npm run lint &amp;&amp; npm test",
+    "start": "node server.cjs"
+  }
+}
+'@
+  'index.html' = @'
+&lt;!DOCTYPE html&gt;
+&lt;html lang="pt-BR"&gt;
+&lt;head&gt;
+  &lt;meta charset="UTF-8"&gt;
+  &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+  &lt;title&gt;Validador de Token&lt;/title&gt;
+  &lt;link rel="stylesheet" href="style.css"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;main class="cartao"&gt;
+    &lt;h1&gt;Validador de Token&lt;/h1&gt;
+    &lt;p class="dica"&gt;Formato esperado: &lt;code&gt;tk_&lt;/code&gt; + 16 letras/números (ex.: &lt;code&gt;tk_a1b2c3d4e5f6a7b8&lt;/code&gt;)&lt;/p&gt;
+    &lt;label for="token"&gt;Token de acesso&lt;/label&gt;
+    &lt;input id="token" type="text" autocomplete="off" placeholder="tk_..."&gt;
+    &lt;button id="validar" type="button"&gt;Validar&lt;/button&gt;
+    &lt;p id="resultado" role="status"&gt;&lt;/p&gt;
+  &lt;/main&gt;
+  &lt;script type="module" src="app.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+'@
+  'style.css' = @'
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  background: #11161d;
+  color: #e6edf3;
+}
+.cartao {
+  width: min(420px, 92vw);
+  padding: 24px;
+  border: 1px solid #2d3743;
+  border-radius: 10px;
+  background: #161d26;
+  display: grid;
+  gap: 10px;
+}
+h1 { margin: 0; font-size: 1.4rem; }
+.dica { margin: 0; color: #9aa7b4; font-size: .9rem; }
+code { font-family: Consolas, monospace; color: #f0c674; }
+input, button { font: inherit; padding: 10px 12px; border-radius: 6px; }
+input { border: 1px solid #3a4654; background: #0d1117; color: inherit; }
+button { border: 0; background: #2f81f7; color: #fff; cursor: pointer; }
+button:hover { background: #1f6feb; }
+#resultado { min-height: 1.4em; margin: 0; font-weight: 600; }
+#resultado.ok { color: #3fb950; }
+#resultado.erro { color: #f85149; }
+'@
+  'app.js' = @'
+import { mascaraToken } from './src/token.js';
+
+const campo = document.querySelector('#token');
+const botao = document.querySelector('#validar');
+const saida = document.querySelector('#resultado');
+
+botao.addEventListener('click', () =&gt; {
+  saida.textContent = 'Token informado: ' + mascaraToken(campo.value);
+  saida.className = '';
+});
+'@
+  'src/token.js' = @'
+/**
+ * Utilidades de token de acesso usadas pela tela de login.
+ * Formato esperado: prefixo "tk_" + 16 caracteres [a-z0-9] (19 no total).
+ */
+export const PREFIXO = 'tk_';
+export const TAMANHO = 19;
+
+/** Remove espaços extras e padroniza para minúsculas. */
+export function normalizaToken(valor) {
+  if (typeof valor !== 'string') return '';
+  return valor.trim().toLowerCase();
+}
+
+/** Oculta o token para exibição: tk_a1b2************ */
+export function mascaraToken(valor) {
+  const token = normalizaToken(valor);
+  if (token.length &lt;= 7) return token;
+  return token.slice(0, 7) + '*'.repeat(token.length - 7);
+}
+'@
+  'tests/token.test.js' = @'
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizaToken, mascaraToken } from '../src/token.js';
+
+test('normalizaToken remove espaços e padroniza minúsculas', () =&gt; {
+  assert.equal(normalizaToken('  TK_ABC  '), 'tk_abc');
+});
+
+test('normalizaToken devolve vazio para valores que não são texto', () =&gt; {
+  assert.equal(normalizaToken(undefined), '');
+  assert.equal(normalizaToken(null), '');
+});
+
+test('mascaraToken mantém visíveis só os 7 primeiros caracteres', () =&gt; {
+  assert.equal(mascaraToken('tk_a1b2c3d4e5f6a7b8'), 'tk_a1b2************');
+});
+'@
+  'scripts/lint.js' = @'
+// Checagem automática simples (sem dependências), usada no CI e localmente.
+//   ERRO  -&gt; bloqueia (código de saída 1): console.log esquecido
+//   AVISO -&gt; não bloqueia: nome de função com menos de 4 caracteres
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const arquivos = ['app.js', ...readdirSync('src')
+  .filter((nome) =&gt; nome.endsWith('.js'))
+  .map((nome) =&gt; join('src', nome))];
+
+let erros = 0;
+let avisos = 0;
+
+for (const caminho of arquivos) {
+  readFileSync(caminho, 'utf8').split(/\r?\n/).forEach((linha, i) =&gt; {
+    const onde = `${caminho}:${i + 1}`;
+    if (/console\.log\(/.test(linha)) {
+      erros++;
+      console.log(`ERRO  ${onde}  console.log esquecido (pode expor dados, como o token)`);
+    }
+    const funcao = linha.match(/function\s+([A-Za-z_$][\w$]*)/);
+    if (funcao &amp;&amp; funcao[1].length &lt; 4) {
+      avisos++;
+      console.log(`AVISO ${onde}  nome de função pouco descritivo: "${funcao[1]}"`);
+    }
+  });
+}
+
+console.log(`\nResultado: ${erros} erro(s), ${avisos} aviso(s) em ${arquivos.length} arquivo(s).`);
+process.exit(erros &gt; 0 ? 1 : 0);
+'@
+  'server.cjs' = @'
+// Servidor estático mínimo para pré-visualização (sem dependências).
+// Uso: node server.cjs   (porta padrão 8080; se ocupada, tenta as 10 seguintes)
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const RAIZ = __dirname;
+const TIPOS = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon'
+};
+
+let porta = Number(process.env.PORT) || 8080;
+const portaMaxima = porta + 10;
+
+const servidor = http.createServer((req, res) =&gt; {
+  const url = decodeURIComponent(req.url.split('?')[0]);
+  const arquivo = path.normalize(path.join(RAIZ, url === '/' ? 'index.html' : url));
+  if (!arquivo.startsWith(RAIZ)) {
+    res.writeHead(403);
+    return res.end('Acesso negado');
+  }
+  fs.readFile(arquivo, (erro, dados) =&gt; {
+    if (erro) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Não encontrado: ' + url);
+    }
+    res.writeHead(200, {
+      'Content-Type': TIPOS[path.extname(arquivo).toLowerCase()] || 'application/octet-stream',
+      'Cache-Control': 'no-store'
+    });
+    res.end(dados);
+  });
+});
+
+servidor.on('error', (erro) =&gt; {
+  if (erro.code === 'EADDRINUSE' &amp;&amp; porta &lt; portaMaxima) {
+    porta++;
+    servidor.listen(porta);
+  } else {
+    console.error('Falha ao iniciar o servidor: ' + erro.message);
+    process.exit(1);
+  }
+});
+
+servidor.on('listening', () =&gt; {
+  fs.writeFileSync(path.join(RAIZ, '.preview-port'), String(porta));
+  console.log(`Preview em http://localhost:${porta}  (Ctrl+C para parar)`);
+});
+
+servidor.listen(porta);
+'@
+  '.gitignore' = @'
+node_modules/
+.preview-port
+*.log
+revisao/diff-pr.txt
+'@
+  '.github/pull_request_template.md' = @'
+## O que foi feito
+&lt;!-- Descreva a mudança em 1 a 3 frases. --&gt;
+
+## Por que essa mudança foi necessária
+&lt;!-- Problema, tarefa ou issue relacionada (ex.: Closes #12). --&gt;
+
+## Como testar
+1. 
+2. 
+Resultado esperado:
+
+## Checklist do autor (antes de pedir revisão)
+- [ ] `npm test` passou localmente
+- [ ] `npm run lint` terminou sem erros
+- [ ] Incluí ou atualizei testes para o caso principal
+- [ ] Não deixei `console.log` nem dados sensíveis no código
+- [ ] A mudança é pequena o bastante para ser revisada em uns 15 minutos
+'@
+  '.github/workflows/ci.yml' = @'
+name: Checagens automáticas
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lint (padrões do time)
+        run: npm run lint
+      - name: Testes automatizados
+        run: npm test
+'@
+  'docs/CHECKLIST_REVISAO.md' = @'
+# Minichecklist de revisão do time
+
+Use antes de dar LGTM ou pedir mudanças (change-request).
+
+- [ ] **A mudança está clara?** A PR tem "o que", "por que" e "como testar"; os commits têm mensagens descritivas.
+- [ ] **Há risco de erro?** Entradas vazias, nulas ou inesperadas foram tratadas; nada de dados sensíveis em log.
+- [ ] **É possível testar?** Existe teste para o caso principal e as checagens automáticas (lint + testes) passaram.
+- [ ] **O comentário está respeitoso?** Fala do código, explica o motivo e sugere um caminho.
+
+Regra de decisão:
+- Todos os itens OK, só sugestões pendentes -&gt; **LGTM**.
+- Qualquer risco de erro, falta de teste do caso principal ou checagem automática falhando -&gt; **change-request**.
+'@
+  'docs/ETIQUETA_COMENTARIOS.md' = @'
+# Etiqueta de comentários de revisão
+
+Comece cada comentário com um rótulo que diz o peso dele:
+
+| Rótulo | Significado | Bloqueia o merge? |
+|---|---|---|
+| `bloqueante:` | Problema real que precisa ser corrigido | Sim (change-request) |
+| `sugestão:` | Melhoria opcional | Não (pode dar LGTM) |
+| `pergunta:` | Dúvida para entender a decisão | Não, até ser respondida |
+| `elogio:` | Algo bem feito que vale reconhecer | Não |
+
+## Três regras
+1. **Explique o motivo:** diga o que pode dar errado ou o que fica mais difícil de entender.
+2. **Sugira melhorias:** proponha um caminho (nome, trecho de código, teste).
+3. **Fale do código, não da pessoa:** "esta função..." em vez de "você fez errado...".
+
+## Antes e depois
+- Ruim: "Isso está confuso."
+- Bom: "sugestão: o nome `chk` não deixa claro que a função valida o token. Pode renomear para `validaToken`?"
+'@
+  'revisao/REVISAO.md' = @'
+# Revisão da PR: feature/validacao-token
+
+Revisor(a):
+Data:
+
+## Checklist aplicado (docs/CHECKLIST_REVISAO.md)
+- [ ] A mudança está clara?
+- [ ] Há risco de erro?
+- [ ] É possível testar?
+- [ ] Os comentários estão respeitosos?
+
+## Comentários
+| # | Arquivo:linha | Rótulo (bloqueante / sugestão / pergunta / elogio) | Comentário |
+|---|---|---|---|
+| 1 |  |  |  |
+| 2 |  |  |  |
+| 3 |  |  |  |
+
+## Decisão
+- [ ] LGTM (aprovar)
+- [ ] Change-request (pedir mudanças)
+
+Justificativa:
+'@
+  'README.md' = @'
+# Laboratório de Code Review
+
+Projeto mínimo usado na aula "Boas práticas de Code Review" (Versionamento de Código).
+
+- `npm test`  - testes automatizados (node:test)
+- `npm run lint` - checagem de padrões do time (scripts/lint.js)
+- `npm start` - preview local em http://localhost:8080
+
+Branches:
+- `main` - versão estável
+- `feature/validacao-token` - "PR" a ser revisada pelo grupo
+'@
+}
+
+# Versão da PR a ser revisada (branch feature/validacao-token) - contém problemas de propósito
+$ArquivosBranch = [ordered]@{
+  'src/token.js' = @'
+/**
+ * Utilidades de token de acesso usadas pela tela de login.
+ * Formato esperado: prefixo "tk_" + 16 caracteres [a-z0-9] (19 no total).
+ */
+export const PREFIXO = 'tk_';
+export const TAMANHO = 19;
+
+/** Remove espaços extras e padroniza para minúsculas. */
+export function normalizaToken(valor) {
+  if (typeof valor !== 'string') return '';
+  return valor.trim().toLowerCase();
+}
+
+/** Oculta o token para exibição: tk_a1b2************ */
+export function mascaraToken(valor) {
+  const token = normalizaToken(valor);
+  if (token.length &lt;= 7) return token;
+  return token.slice(0, 7) + '*'.repeat(token.length - 7);
+}
+
+// valida
+export function chk(t) {
+  console.log('token recebido:', t);
+  const v = t.trim().toLowerCase();
+  const corpo = v.split('_')[1];
+  return corpo.length === 16 &amp;&amp; v.startsWith(PREFIXO) &amp;&amp; v.length == TAMANHO &amp;&amp; /^[a-z0-9]+$/.test(corpo);
+}
+'@
+  'app.js' = @'
+import { chk, mascaraToken } from './src/token.js';
+
+const campo = document.querySelector('#token');
+const botao = document.querySelector('#validar');
+const saida = document.querySelector('#resultado');
+
+botao.addEventListener('click', () =&gt; {
+  if (chk(campo.value)) {
+    saida.textContent = 'Token válido: ' + mascaraToken(campo.value);
+    saida.className = 'ok';
+  } else {
+    saida.textContent = 'Token inválido.';
+    saida.className = 'erro';
+  }
+});
+'@
+}
+
+# ------------------------------------------------------------------ execução
+Write-Host ''
+Write-Host '=== Laboratório: Boas práticas de Code Review ===' -ForegroundColor White
+Write-Host ''
+
+# 1. Git
+$Script:Disponivel.git = Executar-Passo 'Verificar Git (recomendado 2.40 ou superior)' {
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git não encontrado no PATH.' }
+  $v = (Invoke-Nativo 'git' @('--version')).Saida
+  if ($v -match '(\d+)\.(\d+)') {
+    if ([int]$Matches[1] -lt 2 -or ([int]$Matches[1] -eq 2 -and [int]$Matches[2] -lt 28)) {
+      throw "Versão muito antiga ($v). É preciso 2.28 ou superior."
+    }
+  }
+  $v
+} 'Instale o Git: no PowerShell rode  winget install --id Git.Git -e  (ou baixe em https://git-scm.com/download/win). Feche e abra o PowerShell e rode o script de novo.'
+
+# 2. Node.js
+$Script:Disponivel.node = Executar-Passo 'Verificar Node.js (20 LTS ou superior)' {
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js não encontrado no PATH.' }
+  $v = (Invoke-Nativo 'node' @('-v')).Saida
+  $maior = [int]($v.TrimStart('v').Split('.')[0])
+  if ($maior -lt 20) { throw "Node.js $v é antigo: o executor de testes (node --test) precisa da versão 20 ou superior." }
+  "Node.js $v"
+} 'Instale o Node.js LTS: winget install --id OpenJS.NodeJS.LTS -e  (ou https://nodejs.org/pt). Feche e abra o PowerShell e rode o script de novo.'
+
+# 3. npm
+$Script:Disponivel.npm = Executar-Passo 'Verificar npm' {
+  "npm " + (Invoke-Nativo $NpmExe @('-v')).Saida
+} 'O npm vem junto com o Node.js. Reinstale o Node.js LTS (winget install --id OpenJS.NodeJS.LTS -e) e reabra o PowerShell.' -Requer node
+
+# 4. VS Code (opcional)
+if (Get-Command code -ErrorAction SilentlyContinue) {
+  try {
+    $vc = ((Invoke-Nativo 'code' @('--version')).Saida -split "`n")[0]
+    Registrar 'Verificar VS Code (opcional)' 'OK' "VS Code $vc"
+  } catch {
+    Registrar 'Verificar VS Code (opcional)' 'AVISO' 'O comando "code" existe, mas não respondeu.' 'Abra o VS Code e use Ctrl+Shift+P &gt; "Shell Command: Install code command in PATH".'
+  }
+} else {
+  Registrar 'Verificar VS Code (opcional)' 'AVISO' 'Comando "code" não encontrado (a atividade funciona com outro editor).' 'Instale com  winget install --id Microsoft.VisualStudioCode -e  ou marque "Adicionar ao PATH" na instalação.'
+}
+
+# 5. Pasta do projeto
+$Script:Disponivel.pasta = Executar-Passo 'Criar pasta do projeto' {
+  if (-not $Destino) {
+    $docs = [Environment]::GetFolderPath('MyDocuments')
+    if (-not $docs) { $docs = $HOME }
+    $Destino = Join-Path $docs 'atividade-code-review'
+  }
+  if ((Test-Path $Destino) -and (Get-ChildItem -Force $Destino | Select-Object -First 1)) {
+    $Destino = $Destino + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+  }
+  New-Item -ItemType Directory -Path $Destino -Force | Out-Null
+  $Script:Base = (Resolve-Path $Destino).Path
+  $Script:Base
+} 'Verifique se você tem permissão de escrita na pasta. Tente outra pasta: -Destino C:\Users\&lt;seu_usuario&gt;\Desktop\lab'
+
+# 6. Arquivos da main
+$null = Executar-Passo 'Criar arquivos da versão estável (main)' {
+  $n = Escrever-Conjunto $ArquivosMain
+  "$n arquivos criados (src, tests, scripts, .github, docs, revisao)"
+} 'Verifique permissão de escrita e espaço em disco. Antivírus às vezes bloqueia a pasta Documentos: tente -Destino C:\lab' -Requer pasta
+
+# 7. Repositório Git
+$Script:Disponivel.repo = Executar-Passo 'Inicializar repositório Git (branch main)' {
+  Push-Location $Script:Base
+  try {
+    $null = Rodar-Git init
+    $null = Rodar-Git symbolic-ref HEAD refs/heads/main
+    $nome = (Invoke-Nativo 'git' @('config', 'user.name') -PermitirFalha).Saida
+    $email = (Invoke-Nativo 'git' @('config', 'user.email') -PermitirFalha).Saida
+    if (-not $nome -or -not $email) {
+      $null = Rodar-Git config user.name 'Aluno(a) Lab'
+      $null = Rodar-Git config user.email 'aluno@lab.local'
+      Registrar 'Identidade do Git' 'AVISO' 'user.name/user.email não configurados: usei "Aluno(a) Lab" só neste repositório.' 'Configure a sua:  git config --global user.name "Seu Nome"  e  git config --global user.email "seu@email"'
+    }
+    'Repositório criado em ' + $Script:Base
+  } finally { Pop-Location }
+} 'Confira se o Git está instalado (passo 1). Se a pasta estiver dentro de outro repositório ou do OneDrive, use -Destino C:\lab' -Requer git, pasta
+
+# 8. Commit inicial
+$commitOk = Executar-Passo 'Commit inicial na main' {
+  Push-Location $Script:Base
+  try {
+    $null = Rodar-Git add -A
+    $null = Rodar-Git commit -q -m 'chore: estrutura inicial do validador de token' -m 'Inclui modelo de PR, workflow de CI, checklist de revisão e etiqueta de comentários.'
+    (Rodar-Git log --oneline -1).Saida
+  } finally { Pop-Location }
+} 'Rode  git status  na pasta do projeto para ver o erro. Em geral é identidade não configurada: git config --global user.name "Seu Nome"' -Requer repo
+if (-not $commitOk) { $Script:Disponivel.repo = $false }
+
+# 9. Branch da PR
+$Script:Disponivel.branch = Executar-Passo 'Criar branch feature/validacao-token (a PR a revisar)' {
+  Push-Location $Script:Base
+  try {
+    $null = Rodar-Git checkout -q -b feature/validacao-token
+    $null = Escrever-Conjunto $ArquivosBranch
+    $null = Rodar-Git add -A
+    $null = Rodar-Git commit -q -m 'ajustes'
+    'Commit "ajustes" criado sem descrição, de propósito (Etapa 1)'
+  } finally { Pop-Location }
+} 'Rode  git branch -a  e  git status  na pasta do projeto. Apague a pasta e rode o script de novo.' -Requer repo
+
+# 10. Diff da PR
+$null = Executar-Passo 'Salvar o diff da PR em revisao\diff-pr.txt' {
+  Push-Location $Script:Base
+  try {
+    $diff = (Rodar-Git diff --no-color main...feature/validacao-token).Saida
+    Escrever-Arquivo 'revisao/diff-pr.txt' $diff
+    $linhas = ($diff -split "`n").Count
+    "$linhas linhas de diff"
+  } finally { Pop-Location }
+} 'Rode manualmente:  git diff main...feature/validacao-token' -Requer branch
+
+# 11. Testes
+$null = Executar-Passo 'Rodar testes automatizados (npm test)' {
+  Push-Location $Script:Base
+  try {
+    $r = Invoke-Nativo $NpmExe @('test')
+    $pass = if ($r.Saida -match '# pass (\d+)') { $Matches[1] } else { '?' }
+    "$pass testes passaram (repare: nenhum testa a função nova)"
+  } finally { Pop-Location }
+} 'Veja a saída de  npm test  na pasta do projeto. Precisa do Node.js 20 ou superior.' -Requer npm, pasta
+
+# 12. Lint (falha esperada)
+if ($Script:Disponivel.npm -and $Script:Base) {
+  Push-Location $Script:Base
+  try {
+    $r = Invoke-Nativo $NpmExe @('run', 'lint') -PermitirFalha
+    if ($r.Codigo -ne 0 -and $r.Saida -match 'console\.log') {
+      Registrar 'Rodar checagem de padrões (npm run lint)' 'ESPERADO' 'O lint barrou a PR: 1 erro (console.log) e 1 aviso (nome "chk"). O grupo vai corrigir isso.'
+    } elseif ($r.Codigo -eq 0) {
+      Registrar 'Rodar checagem de padrões (npm run lint)' 'AVISO' 'O lint passou, mas deveria apontar problemas na branch da PR.' 'Confira se está na branch certa:  git switch feature/validacao-token  e rode  npm run lint'
+    } else {
+      Registrar 'Rodar checagem de padrões (npm run lint)' 'FALHA' $r.Saida 'Rode  npm run lint  na pasta do projeto e leia a mensagem de erro.'
+    }
+  } finally { Pop-Location }
+} else {
+  Registrar 'Rodar checagem de padrões (npm run lint)' 'IGNORADO' 'Depende do npm e da pasta do projeto.' 'Corrija os passos do Node.js/npm e rode o script de novo.'
+}
+
+# 13. Servidor de preview
+if ($SemServidor) {
+  Registrar 'Iniciar servidor de preview' 'IGNORADO' 'Pulado pelo parâmetro -SemServidor.' 'Para iniciar depois:  npm start  (na pasta do projeto)'
+} else {
+  $null = Executar-Passo 'Iniciar servidor de preview' {
+    $arqPorta = Join-Path $Script:Base '.preview-port'
+    if (Test-Path $arqPorta) { Remove-Item $arqPorta -Force }
+    $env:PORT = [string]$Porta
+    $opcoes = @{ FilePath = 'node'; ArgumentList = 'server.cjs'; WorkingDirectory = $Script:Base; PassThru = $true }
+    if ($NoWindows) { $opcoes.WindowStyle = 'Minimized' }
+    else { $opcoes.RedirectStandardOutput = (Join-Path $Script:Base 'preview.log'); $opcoes.RedirectStandardError = (Join-Path $Script:Base 'preview-erro.log') }
+    $proc = Start-Process @opcoes
+    $url = $null
+    for ($i = 0; $i -lt 20 -and -not $url; $i++) {
+      Start-Sleep -Milliseconds 500
+      if ($proc.HasExited) { throw 'O servidor encerrou logo após iniciar.' }
+      if (Test-Path $arqPorta) {
+        $p = (Get-Content $arqPorta -Raw).Trim()
+        try {
+          $resp = Invoke-WebRequest -Uri "http://localhost:$p/" -UseBasicParsing -TimeoutSec 3
+          if ($resp.StatusCode -eq 200) { $url = "http://localhost:$p/" }
+        } catch { }
+      }
+    }
+    if (-not $url) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue; throw 'O servidor não respondeu em 10 segundos.' }
+    $Script:UrlPreview = $url
+    $Script:PidPreview = $proc.Id
+    "$url  (PID $($proc.Id); para parar: Stop-Process -Id $($proc.Id))"
+  } 'Rode na pasta do projeto:  node server.cjs  e leia a mensagem. Se a porta estiver ocupada, use -Porta 8090. Se o Firewall do Windows perguntar, permita acesso em rede privada.' -Requer node, pasta
+}
+
+# Abre editor e navegador (só no Windows, sem esperar resposta)
+if ($NoWindows -and $Script:Base) {
+  if (Get-Command code -ErrorAction SilentlyContinue) { try { Start-Process 'code' -ArgumentList "`"$($Script:Base)`"" -WindowStyle Hidden } catch { } }
+  if ($Script:UrlPreview) { try { Start-Process $Script:UrlPreview } catch { } }
+}
+
+# ------------------------------------------------------------------ resumo
+$ok = @($Script:Resultados | Where-Object { $_.Status -eq 'OK' -or $_.Status -eq 'ESPERADO' }).Count
+$falhas = @($Script:Resultados | Where-Object { $_.Status -eq 'FALHA' -or $_.Status -eq 'IGNORADO' })
+$avisos = @($Script:Resultados | Where-Object { $_.Status -eq 'AVISO' })
+
+Write-Host ''
+Write-Host '=================== RESUMO ===================' -ForegroundColor White
+$i = 0
+foreach ($r in $Script:Resultados) {
+  $i++
+  $cor = @{ OK = 'Green'; ESPERADO = 'Cyan'; AVISO = 'Yellow'; FALHA = 'Red'; IGNORADO = 'DarkGray' }[$r.Status]
+  Write-Host ('{0,2}. {1,-9} {2}' -f $i, $r.Status, $r.Passo) -ForegroundColor $cor
+}
+Write-Host ''
+Write-Host ("Passos concluídos: {0} de {1}" -f $ok, $Script:Resultados.Count) -ForegroundColor White
+
+if ($falhas.Count -gt 0 -or $avisos.Count -gt 0) {
+  Write-Host ''
+  Write-Host 'O QUE FALTA CONFIGURAR / COMO CORRIGIR:' -ForegroundColor Yellow
+  foreach ($f in @($falhas) + @($avisos)) {
+    Write-Host (" - [{0}] {1}" -f $f.Status, $f.Passo) -ForegroundColor Yellow
+    if ($f.Detalhe) { Write-Host ("     Motivo: {0}" -f (($f.Detalhe -split "`n")[0])) }
+    if ($f.Correcao) { Write-Host ("     Como corrigir: {0}" -f $f.Correcao) }
+  }
+}
+
+if ($Script:Base) {
+  Write-Host ''
+  Write-Host 'PRÓXIMOS PASSOS:' -ForegroundColor White
+  Write-Host ("  cd `"{0}`"" -f $Script:Base)
+  Write-Host '  code .'
+  Write-Host '  git log --oneline --graph --all'
+  if ($Script:UrlPreview) { Write-Host ("  Preview: {0}" -f $Script:UrlPreview) }
+}
+Write-Host ''
+
+if ($falhas.Count -gt 0) { exit 1 } else { exit 0 }</code></pre></div></details>
+    </div>
+    <p class="so-pdf muted">O script completo <code>atividade-code-review_script.ps1</code> acompanha esta atividade como arquivo separado.</p>
+  </section>
+
+  <!-- 5. Fontes -->
+  <section aria-labelledby="fontes-h">
+    <h2 id="fontes-h">Fontes</h2>
+    <ol class="fontes">
+      <li>SEDUC-SP. <em>Roteiro de atividade prática: Boas práticas de Code Review</em> (arquivo SISANO2C5B4S22A2AP_ALUNO). Educação Profissional Paulista, Técnico em Desenvolvimento de Sistemas, Versionamento de Código. Material de referência da aula.</li>
+      <li><a href="https://docs.github.com/pt/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository" target="_blank" rel="noopener">Criar um modelo de pull request para o seu repositório</a>, GitHub Docs.</li>
+      <li><a href="https://docs.github.com/pt/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/about-pull-request-reviews" target="_blank" rel="noopener">Revisões de pull request</a>, GitHub Docs.</li>
+      <li><a href="https://docs.github.com/pt/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches" target="_blank" rel="noopener">Sobre branches protegidos</a>, GitHub Docs.</li>
+      <li><a href="https://google.github.io/eng-practices/review/" target="_blank" rel="noopener">Google Engineering Practices: Code Review</a>, Google.</li>
+      <li><a href="https://conventionalcomments.org/" target="_blank" rel="noopener">Conventional Comments</a> (base para os rótulos sugestão, pergunta, elogio e bloqueante).</li>
+      <li><a href="https://nodejs.org/api/test.html" target="_blank" rel="noopener">Test runner (node:test)</a>, documentação do Node.js.</li>
+      <li><a href="https://git-scm.com/book/pt-br/v2" target="_blank" rel="noopener">Pro Git, 2ª edição em português</a>, capítulos 3 (Branches) e 5 (Git distribuído).</li>
+    </ol>
+  </section>
+
+  <!-- 6. Feedback -->
+  <section aria-labelledby="fb-h">
+    <h2 id="fb-h">Feedback do grupo</h2>
+    <div class="campo">
+      <label for="feedback">O que funcionou, o que travou e o que vocês mudariam nesta atividade?</label>
+      <textarea id="feedback" class="so-web" placeholder="Escreva livremente."></textarea>
+      <div class="so-pdf"><div class="caixa-branco"></div></div>
+    </div>
+    <div class="acoes so-web">
+      <button type="button" class="botao" id="copiar-resumo">Copiar resumo para entregar</button>
+      <span class="muted" id="resumo-status" role="status"></span>
+    </div>
+  </section>
+
+  <p class="rodape">Prof. Marcos Souza · Educação Profissional Paulista · Versionamento de Código · 13/10/2026 às 01:46 (horário de Brasília)</p>
+</div>
+
+<script>
+(function () {
+  // Estado guardado apenas em memória (sem localStorage): vale enquanto a aba estiver aberta.
+  const estado = { nomes: '', itens: {}, feedback: '', respostasLiberadas: false };
+
+  const itens = Array.from(document.querySelectorAll('input.item'));
+  const barra = document.getElementById('barra');
+  const trilho = document.getElementById('trilho');
+  const num = document.getElementById('prog-num');
+  const pct = document.getElementById('prog-pct');
+  const respostas = document.getElementById('respostas');
+  const bloqueio = document.getElementById('bloqueio');
+  const bloqueioTxt = document.getElementById('bloqueio-txt');
+
+  function atualizar() {
+    const total = itens.length;
+    const feitos = itens.filter(function (i) { return i.checked; }).length;
+    const p = total ? Math.round((feitos / total) * 100) : 0;
+    barra.style.width = p + '%';
+    trilho.setAttribute('aria-valuenow', String(p));
+    num.textContent = feitos + ' / ' + total;
+    pct.textContent = p + '%';
+    itens.forEach(function (i) {
+      estado.itens[i.id] = i.checked;
+      const passo = document.getElementById('p-' + i.id);
+      if (passo) passo.classList.toggle('feito', i.checked);
+    });
+    if (p >= 50) estado.respostasLiberadas = true;
+    respostas.hidden = !estado.respostasLiberadas;
+    bloqueio.hidden = estado.respostasLiberadas;
+    const faltam = Math.max(0, Math.ceil(total / 2) - feitos);
+    bloqueioTxt.textContent = faltam > 0
+      ? 'Elas aparecem quando o progresso chegar a 50%. Faltam ' + faltam + ' item(ns).'
+      : 'Liberadas.';
+  }
+
+  itens.forEach(function (i) { i.addEventListener('change', atualizar); });
+  document.getElementById('nomes').addEventListener('input', function (e) { estado.nomes = e.target.value; });
+  document.getElementById('feedback').addEventListener('input', function (e) { estado.feedback = e.target.value; });
+
+  // Botões de copiar
+  function copiar(texto, botao, alvo) {
+    function ok() { botao.textContent = 'Copiado'; botao.classList.add('ok'); setTimeout(function () { botao.textContent = 'Copiar'; botao.classList.remove('ok'); }, 1600); }
+    function selecionar() {
+      if (!alvo) return;
+      const r = document.createRange(); r.selectNodeContents(alvo);
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      botao.textContent = 'Ctrl+C';
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(ok, selecionar);
+    } else { selecionar(); }
+  }
+  document.querySelectorAll('.copiar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const pre = b.closest('.codigo').querySelector('pre');
+      copiar(pre.innerText.replace(/\n$/, ''), b, pre);
+    });
+  });
+
+  document.getElementById('copiar-resumo').addEventListener('click', function () {
+    const feitos = itens.filter(function (i) { return i.checked; }).length;
+    const texto = [
+      'Atividade: Boas práticas de Code Review (Versionamento de Código, 4º bim, Semana 22, Aula 2)',
+      'Grupo: ' + (estado.nomes || '(não informado)'),
+      'Progresso: ' + feitos + '/' + itens.length + ' (' + Math.round(feitos / itens.length * 100) + '%)',
+      'Pendentes: ' + (itens.filter(function (i) { return !i.checked; }).map(function (i) { return i.id; }).join(', ') || 'nenhum'),
+      'Feedback: ' + (estado.feedback || '(vazio)')
+    ].join('\n');
+    const status = document.getElementById('resumo-status');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(function () { status.textContent = 'Resumo copiado. Cole no AVA ou no e-mail do professor.'; },
+        function () { status.textContent = 'Não foi possível copiar automaticamente. Selecione e copie o feedback manualmente.'; });
+    } else { status.textContent = 'Seu navegador bloqueou a cópia automática.'; }
+  });
+
+  // Estado final estático usado para gerar o PDF
+  window.modoPDF = function () {
+    document.documentElement.setAttribute('data-pdf', '');
+    itens.forEach(function (i) { i.checked = true; });
+    estado.respostasLiberadas = true;
+    document.querySelectorAll('details').forEach(function (d) { d.open = true; });
+    atualizar();
+  };
+
+  atualizar();
+})();
+</script>
+
+</body>
+</html>

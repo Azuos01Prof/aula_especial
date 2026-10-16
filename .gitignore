@@ -1,0 +1,18 @@
+# dependências (o npm baixa de novo com npm install)
+node_modules/
+
+# segredos e configurações locais
+.env
+.env.*
+!.env.example
+
+# arquivos gerados
+dist/
+build/
+coverage/
+*.log
+
+# sistema e editor
+Thumbs.db
+Desktop.ini
+.DS_Store
